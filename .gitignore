@@ -1,0 +1,11 @@
+.env
+__pycache__/
+*.pyc
+*.log
+cost_log.jsonl
+pilot_report.json
+*.db
+tiktok_miner.db
+.venv/
+venv/
+.pytest_cache/

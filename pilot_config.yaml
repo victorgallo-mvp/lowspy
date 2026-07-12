@@ -1,0 +1,154 @@
+# =============================================================================
+# Piloto — configuração editável (config, NÃO hardcode)
+# Fase 0 do MVP: valida coleta + custo via ScrapeCreators (TikTok orgânico).
+# =============================================================================
+
+# --- Seeding: 3 grupos de keyword -------------------------------------------
+keywords:
+  # Grupo 1 — Produto (termos do operador). No piloto, estes são as QUERIES
+  # da busca /v1/tiktok/search/top (escolha: product-specific, região BR).
+  produto:
+    - "pdf"
+    - "planilha excel"
+    - "ebook 10 reais"
+
+  # Grupo 2 — Comportamento de venda (usado no gate de intenção, Nível 1).
+  comportamento_venda:
+    - "por apenas"
+    - "link na bio"
+    - "frete grátis"
+    - "últimas unidades"
+    - "arraste pra cima"
+    - "compre agora"
+    - "garanta o seu"
+    - "acesso imediato"
+
+  # CTA de legenda — sinal de que HÁ vendedor (funil digital off-platform).
+  # Recupera vendedor de PDF/ebook/planilha cuja demanda não vira comentário.
+  cta_legenda:
+    - "acesse meu perfil"
+    - "acesse o perfil"
+    - "link no perfil"
+    - "link do meu perfil"
+    - "no meu perfil"
+    - "link na bio"
+    - "clique no link"
+    - "tenha acesso"
+    - "acesse já"
+    - "para adquirir"
+    - "adquira"
+    - "material completo"
+    - "apostila completa"
+    - "planilha completa"
+    - "pdf completo"
+    - "garanta o seu"
+    - "baixe agora"
+
+  # Grupo 3 — Domínios de checkout (sinal mais forte de que há produto à venda).
+  checkout:
+    - "hotmart"
+    - "kiwify"
+    - "cakto"
+    - "ticto"
+    - "braip"
+    - "monetizze"
+    - "eduzz"
+    - "pepper"
+
+# --- Palavras de intenção de compra (Nível 1) -------------------------------
+intencao:
+  - "quero"
+  - "eu quero"
+  - "quero comprar"
+  - "preço"
+  - "quanto"
+  - "quanto custa"
+  - "quanto é"
+  - "onde compro"
+  - "onde comprar"
+  - "como compro"
+  - "como comprar"
+  - "manda o link"
+  - "me manda"
+  - "tem link"
+  - "disponível"
+  - "vendе"          # tolera variação; substring case-insensitive
+  # Intent v2 — funil off-platform (vendedor de nicho sai do TikTok)
+  - "me chama"
+  - "chama no whats"
+  - "manda no direct"
+  - "no direct"
+  - "tá no insta"
+  - "entrar no grupo"
+  - "grupo de whatsapp"
+  - "whatsapp"
+
+# --- Estratégia de descoberta -----------------------------------------------
+# mode: "hashtag" (recomendado — acha vendedor de nicho) ou "top" (busca por query)
+discovery:
+  mode: "hashtag"
+  # Mercados ligáveis/desligáveis. Cada hashtag vira uma chamada /search/hashtag.
+  enabled_markets: ["digital_info", "criativo", "fisico_revenda"]
+  markets:
+    digital_info:
+      - "apostilaconcurso"
+      - "planilhaexcel"
+      - "ebook"
+    criativo:
+      - "presetlightroom"
+      - "templatecanva"
+    fisico_revenda:
+      - "achadinhos"
+      - "lojade10"
+    nicho:
+      - "receitafit"
+      - "artesanato"
+
+# --- Parâmetros da busca /v1/tiktok/search/top (fallback do mode=top) --------
+search:
+  publish_time: "this-week"
+  sort_by: "relevance"        # relevance | most-liked | date-posted
+  region: "BR"
+
+# --- Filtro de idioma (dropa #ebook internacional, hotmart espanhol) ---------
+language:
+  require_ptbr: true
+
+# --- Thresholds da cascata (RELATIVO por hashtag, não global) ----------------
+# Cada hashtag contribui com seus MELHORES posts (breadth), com piso absoluto
+# baixo só pra dropar post morto. Evita matar nicho de baixo engajamento.
+thresholds:
+  abs_min_comments: 5      # piso absoluto (dropa post morto)
+  abs_min_likes: 20
+  relative_top_frac: 0.5   # mantém os 50% mais comentados de cada hashtag
+  intent_threshold: 3.0    # Nível 1: score mínimo pra sobreviver
+
+# --- Pesos do score de intenção (peso, não match cru) -----------------------
+weights:
+  intencao: 1.0
+  comportamento_venda: 0.5
+  checkout: 2.0
+  cta_legenda: 1.5         # sinal de vendedor na legenda (funil digital)
+  density_bonus_max: 2.0   # bônus proporcional à densidade de comentários de intenção
+  # Piso de intenção de comentário p/ marcar "demanda confirmada" (senão é "vendedor")
+  min_intent_comments_for_demand: 2
+
+# --- Caps do run --live (escala "enxuto ~50 créditos") ----------------------
+caps:
+  max_search_pages: 1        # páginas de busca por keyword
+  max_hashtags: 6            # teto de chamadas /search/hashtag no run
+  max_comment_fetches: 12    # teto rígido de fetches de comentário no run inteiro
+
+# --- Precificação (ajustar ao teu plano) ------------------------------------
+pricing:
+  credit_usd: 0.002          # custo por crédito ScrapeCreators (placeholder — ajustar)
+  assumed_credits_per_search_request: 1
+  assumed_credits_per_comment_request: 1
+
+  # Nível 2 — Haiku 4.5 via Batch API (−50%). Preço/1M tokens em USD.
+  # Sticker Haiku 4.5: $1.00 input / $5.00 output. Batch = metade.
+  haiku_batch_input_usd_per_mtok: 0.50
+  haiku_batch_output_usd_per_mtok: 2.50
+  est_input_tokens_per_post: 600     # legenda + 1 pág. de comentários + prompt
+  est_output_tokens_per_post: 150    # JSON estruturado {produto,preço,score,nicho}
+  model_tier2: "claude-haiku-4-5"    # MODEL_TIER2 (env pode sobrescrever)

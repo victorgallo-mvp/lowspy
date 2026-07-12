@@ -1,0 +1,56 @@
+{
+  "comments": [
+    {
+      "text": "quanto custa? quero comprar",
+      "cid": "c1",
+      "digg_count": 12,
+      "reply_comment_total": 1,
+      "create_time": "1720000500",
+      "user": {"nickname": "ana.souza", "unique_id": "anasouza", "uid": "u1"}
+    },
+    {
+      "text": "manda o link por favor 🙏",
+      "cid": "c2",
+      "digg_count": 8,
+      "reply_comment_total": 0,
+      "create_time": "1720000600",
+      "user": {"nickname": "joao_pereira", "unique_id": "joaop", "uid": "u2"}
+    },
+    {
+      "text": "tá na bio? onde compro",
+      "cid": "c3",
+      "digg_count": 3,
+      "reply_comment_total": 0,
+      "create_time": "1720000700",
+      "user": {"nickname": "mari", "unique_id": "mari88", "uid": "u3"}
+    },
+    {
+      "text": "amei o vídeo kkkk",
+      "cid": "c4",
+      "digg_count": 40,
+      "reply_comment_total": 0,
+      "create_time": "1720000800",
+      "user": {"nickname": "lucas", "unique_id": "lucas_r", "uid": "u4"}
+    },
+    {
+      "text": "primeiro!!",
+      "cid": "c5",
+      "digg_count": 1,
+      "reply_comment_total": 0,
+      "create_time": "1720000900",
+      "user": {"nickname": "bot123", "unique_id": "bot123", "uid": "u5"}
+    },
+    {
+      "text": "disponível ainda? quero um",
+      "cid": "c6",
+      "digg_count": 5,
+      "reply_comment_total": 0,
+      "create_time": "1720001000",
+      "user": {"nickname": "carla.f", "unique_id": "carlaf", "uid": "u6"}
+    }
+  ],
+  "cursor": 20,
+  "total": 214,
+  "has_more": 1,
+  "status_code": 0
+}

@@ -1,0 +1,63 @@
+{
+  "success": true,
+  "credits_remaining": 1000,
+  "cursor": 20,
+  "items": [
+    {
+      "id": "7300000000000000001",
+      "desc": "Planilha de controle financeiro pessoal 📊 por apenas 10 reais! Link na bio 👆 #planilha #financas",
+      "content_type": "video",
+      "create_time": "1720000000",
+      "region": "BR",
+      "url": "https://www.tiktok.com/@financeiro/video/7300000000000000001",
+      "statistics": {
+        "comment_count": 214,
+        "digg_count": 5200,
+        "play_count": 120000,
+        "share_count": 340
+      }
+    },
+    {
+      "id": "7300000000000000002",
+      "desc": "Ebook 50 receitas fit em PDF 🥗 acesso imediato pela Hotmart",
+      "content_type": "multi_photo",
+      "create_time": "1720001000",
+      "region": "BR",
+      "url": "https://www.tiktok.com/@receitasfit/video/7300000000000000002",
+      "statistics": {
+        "comment_count": 87,
+        "digg_count": 1900,
+        "play_count": 45000,
+        "share_count": 120
+      }
+    },
+    {
+      "id": "7300000000000000003",
+      "desc": "meu setup de estudos 📚 organização com planilha",
+      "content_type": "video",
+      "create_time": "1720002000",
+      "region": "BR",
+      "url": "https://www.tiktok.com/@estudos/video/7300000000000000003",
+      "statistics": {
+        "comment_count": 8,
+        "digg_count": 40,
+        "play_count": 900,
+        "share_count": 2
+      }
+    },
+    {
+      "id": "7300000000000000004",
+      "desc": "PDF apostila concurso 2024 completa",
+      "content_type": "video",
+      "create_time": "1720003000",
+      "region": "BR",
+      "url": "https://www.tiktok.com/@concurseiro/video/7300000000000000004",
+      "statistics": {
+        "comment_count": 132,
+        "digg_count": 60,
+        "play_count": 8000,
+        "share_count": 15
+      }
+    }
+  ]
+}

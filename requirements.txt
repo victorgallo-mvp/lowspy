@@ -1,0 +1,13 @@
+# Fase 1-3 — ingestão + storage + pipeline + API
+httpx>=0.27
+tenacity>=8.2
+pyyaml>=6.0
+python-dotenv>=1.0
+pydantic>=2.6
+SQLAlchemy>=2.0
+psycopg[binary]>=3.1      # driver Postgres (Railway); testes rodam em SQLite
+anthropic>=0.40           # Nível 2 (extração Haiku Batch)
+fastapi>=0.110            # Fase 3 — API
+uvicorn[standard]>=0.29   # ASGI server (Railway web)
+# Testes:
+pytest>=8.0
