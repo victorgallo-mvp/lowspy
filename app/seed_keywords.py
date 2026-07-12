@@ -10,8 +10,11 @@ from .config import load_config
 from .db import SessionLocal, init_db
 from .models import Keyword
 
-# Mercados cujo sinal primário é o vendedor (legenda), não a demanda no comentário.
-_VENDEDOR_MARKETS = {"digital_info", "criativo", "nicho"}
+# Mercados cujo sinal primário é o vendedor (legenda/entrega), não a demanda no
+# comentário — produto digital vende off-platform (metodologia do operador).
+_VENDEDOR_MARKETS = {
+    "formato_digital", "formato_criativo", "digital_info", "criativo", "nicho",
+}
 
 
 def seed(session=None) -> int:

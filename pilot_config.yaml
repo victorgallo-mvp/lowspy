@@ -43,6 +43,19 @@ keywords:
     - "pdf completo"
     - "garanta o seu"
     - "baixe agora"
+    # Linguagem de Entrega (do doc do operador) — recupera vendedor digital
+    - "acesso imediato"
+    - "recebe na hora"
+    - "download imediato"
+    - "envio por e-mail"
+    - "envio por email"
+    - "pronto para imprimir"
+    - "prontas para imprimir"
+    - "arquivo digital"
+    - "link para download"
+    - "disponibilizamos em pdf"
+    - "para imprimir"
+    - "baixar agora"
 
   # Grupo 3 — Domínios de checkout (sinal mais forte de que há produto à venda).
   checkout:
@@ -82,27 +95,42 @@ intencao:
   - "entrar no grupo"
   - "grupo de whatsapp"
   - "whatsapp"
+  # Linguagem de Venda (do doc do operador)
+  - "quero esse"
+  - "quero o pdf"
+  - "quero o arquivo"
+  - "tem o pdf"
+  - "tem o arquivo"
+  - "como recebo"
+  - "como recebo?"
+  - "como faço pra comprar"
 
 # --- Estratégia de descoberta -----------------------------------------------
 # mode: "hashtag" (recomendado — acha vendedor de nicho) ou "top" (busca por query)
 discovery:
   mode: "hashtag"
-  # Mercados ligáveis/desligáveis. Cada hashtag vira uma chamada /search/hashtag.
-  enabled_markets: ["digital_info", "criativo", "fisico_revenda"]
+  # Metodologia do operador: minera FORMATO + PRECIFICAÇÃO, não nicho. Cada hashtag
+  # vira uma chamada /search/hashtag. Mercados ligáveis/desligáveis.
+  enabled_markets: ["formato_digital", "formato_criativo", "fisico_revenda"]
   markets:
-    digital_info:
-      - "apostilaconcurso"
-      - "planilhaexcel"
-      - "ebook"
-    criativo:
-      - "presetlightroom"
+    # Formato de Entrega (digital) — acha o vendedor de PDF/apostila/molde direto
+    formato_digital:
+      - "apostila"
+      - "moldes"
+      - "printable"
+      - "planilhas"
+      - "materialdigital"
+      - "arquivodigital"
+    # Formato criativo/editável
+    formato_criativo:
       - "templatecanva"
+      - "presetlightroom"
+      - "artesdigitais"
+    # Físico/revenda (sinal de demanda forte no comentário)
     fisico_revenda:
       - "achadinhos"
       - "lojade10"
-    nicho:
-      - "receitafit"
-      - "artesanato"
+      - "importados"
 
 # --- Parâmetros da busca /v1/tiktok/search/top (fallback do mode=top) --------
 search:
