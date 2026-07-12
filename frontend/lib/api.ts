@@ -1,5 +1,12 @@
-export const API_BASE =
-  process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "") || "http://localhost:8000";
+function resolveBase(): string {
+  // tolera espaço/quebra-de-linha, barra final e falta de esquema (erros comuns de env var)
+  let raw = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000").trim();
+  raw = raw.replace(/\/+$/, "");
+  if (raw && !/^https?:\/\//i.test(raw)) raw = "https://" + raw;
+  return raw;
+}
+
+export const API_BASE = resolveBase();
 
 export type Produto = {
   post_id: string;
