@@ -146,10 +146,10 @@ language:
 # Cada hashtag contribui com seus MELHORES posts (breadth), com piso absoluto
 # baixo só pra dropar post morto. Evita matar nicho de baixo engajamento.
 thresholds:
-  abs_min_comments: 5      # piso absoluto (dropa post morto)
-  abs_min_likes: 20
-  relative_top_frac: 0.5   # mantém os 50% mais comentados de cada hashtag
-  intent_threshold: 3.0    # Nível 1: score mínimo pra sobreviver
+  abs_min_comments: 3      # piso absoluto (dropa post morto)
+  abs_min_likes: 10
+  relative_top_frac: 0.75  # mantém os 75% mais comentados de cada hashtag
+  intent_threshold: 2.0    # Nível 1: score mínimo pra sobreviver (afrouxado p/ + resultados)
 
 # --- Pesos do score de intenção (peso, não match cru) -----------------------
 weights:
@@ -164,8 +164,8 @@ weights:
 # --- Caps do run --live (escala "enxuto ~50 créditos") ----------------------
 caps:
   max_search_pages: 1        # páginas de busca por keyword
-  max_hashtags: 6            # teto de chamadas /search/hashtag no run
-  max_comment_fetches: 12    # teto rígido de fetches de comentário no run inteiro
+  max_hashtags: 12           # teto de chamadas /search/hashtag no run
+  max_comment_fetches: 30    # teto rígido de fetches de comentário no run inteiro
 
 # --- Precificação (ajustar ao teu plano) ------------------------------------
 pricing:
