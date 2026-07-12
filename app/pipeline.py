@@ -284,7 +284,7 @@ def main() -> None:
     try:
         if args.seed:
             from .seed_keywords import seed
-            LOG.info("Seed: %d keywords", seed(session))
+            LOG.info("Resync de keywords: %s", seed(session))
         summary = run_sweep(session, cfg, args.live, args.max_hashtags, args.max_comment_fetches)
         print("\n=== RESUMO DA VARREDURA ===")
         for k, v in summary.items():
