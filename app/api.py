@@ -10,13 +10,13 @@ from collections import defaultdict
 from contextlib import asynccontextmanager
 from typing import Optional
 
-from fastapi import Depends, FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import func, select
+from sqlalchemy import select
 
-from . import config
+from . import config, jobs
 from .db import SessionLocal, init_db
-from .models import CostLog, Post, Produto, Score
+from .models import CostLog, Post, Produto, Run, Score
 
 
 @asynccontextmanager
@@ -25,6 +25,7 @@ async def lifespan(app: FastAPI):
     if os.getenv("AUTO_SEED", "").lower() in ("1", "true", "yes"):
         from .seed_keywords import seed
         seed()
+    jobs.reset_stale()  # runs presos por restart → interrompidos
     yield
 
 
@@ -143,3 +144,51 @@ def custo_dia(db=Depends(get_db)):
             "total_usd": round(scrape_usd + d["haiku_usd"], 4),
         })
     return {"credit_usd": config.CREDIT_USD, "dias": out}
+
+
+# --------------------------------------------------------------------------- #
+# Varredura disparada pelo dashboard (assíncrona)
+# --------------------------------------------------------------------------- #
+def _require_token(x_api_token: Optional[str]) -> None:
+    """Protege o disparo pago. Sem TRIGGER_TOKEN setado (dev) = liberado."""
+    if config.TRIGGER_TOKEN and x_api_token != config.TRIGGER_TOKEN:
+        raise HTTPException(status_code=401, detail="token inválido")
+
+
+def _run_dict(run: Run) -> dict:
+    return {
+        "id": run.id,
+        "status": run.status,
+        "mode": run.mode,
+        "summary": run.summary,
+        "error": run.error,
+        "started_at": run.started_at.isoformat() if run.started_at else None,
+        "finished_at": run.finished_at.isoformat() if run.finished_at else None,
+    }
+
+
+@app.post("/varredura")
+def disparar_varredura(
+    db=Depends(get_db),
+    dry: bool = Query(False, description="true = dry-run (fixtures, gasto zero)"),
+    x_api_token: Optional[str] = Header(None),
+):
+    _require_token(x_api_token)
+    run_id = jobs.start_sweep(db, live=not dry)
+    if run_id is None:
+        raise HTTPException(status_code=409, detail="já existe uma varredura em andamento")
+    return {"run_id": run_id, "status": "queued", "mode": "dry-run" if dry else "live"}
+
+
+@app.get("/varredura/status")
+def varredura_status(db=Depends(get_db)):
+    run = db.execute(select(Run).order_by(Run.id.desc())).scalars().first()
+    return {"running": jobs.is_running(), "ultima": _run_dict(run) if run else None}
+
+
+@app.get("/varredura/{run_id}")
+def varredura_run(run_id: int, db=Depends(get_db)):
+    run = db.get(Run, run_id)
+    if not run:
+        raise HTTPException(status_code=404, detail="run não encontrado")
+    return _run_dict(run)

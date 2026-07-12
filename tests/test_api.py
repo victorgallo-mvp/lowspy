@@ -51,3 +51,34 @@ def test_custo_dia(session):
     body = client.get("/custo/dia").json()
     assert "dias" in body and "credit_usd" in body
     assert body["dias"]  # pelo menos 1 dia com requests de coleta
+
+
+def _wait_run(run_id, tries=60):
+    import time
+    for _ in range(tries):
+        st = client.get(f"/varredura/{run_id}").json()
+        if st["status"] in ("done", "error", "interrupted"):
+            return st
+        time.sleep(0.1)
+    return client.get(f"/varredura/{run_id}").json()
+
+
+def test_varredura_dispara_assincrono(session):
+    session.add(Keyword(termo="achadinhos", tipo="hashtag", mercado="fisico_revenda",
+                        sinal_esperado="demanda", ativo=True))
+    session.commit()
+    r = client.post("/varredura?dry=true")  # dry = gasto zero
+    assert r.status_code == 200
+    st = _wait_run(r.json()["run_id"])
+    assert st["status"] == "done"
+    assert st["summary"]["sobreviventes"] >= 1
+    assert client.get("/produtos").json()["total"] >= 1  # populou o dashboard
+
+
+def test_varredura_token_protege(session, monkeypatch):
+    from app import config as cfg
+    monkeypatch.setattr(cfg, "TRIGGER_TOKEN", "segredo")
+    assert client.post("/varredura?dry=true").status_code == 401  # sem token
+    r = client.post("/varredura?dry=true", headers={"X-API-Token": "segredo"})
+    assert r.status_code == 200
+    _wait_run(r.json()["run_id"])  # drena a thread antes do teardown

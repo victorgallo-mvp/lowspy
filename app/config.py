@@ -28,6 +28,8 @@ CREDIT_USD = float(os.getenv("CREDIT_USD", "0.002"))
 MODEL_TIER2 = os.getenv("MODEL_TIER2", "claude-haiku-4-5")
 # Origens permitidas do frontend (Vercel). "*" em dev; setar a URL do Vercel em prod.
 CORS_ORIGINS = os.getenv("CORS_ORIGINS", "*")
+# Token que protege o disparo de varredura (paga). Vazio em dev = sem proteção.
+TRIGGER_TOKEN = os.getenv("TRIGGER_TOKEN", "")
 FIXTURES = ROOT / "fixtures"
 
 

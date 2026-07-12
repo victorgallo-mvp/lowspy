@@ -6,8 +6,12 @@ import {
   Filtros,
   Produto,
   ProdutosResp,
+  TriggerError,
   getCusto,
+  getLatestRun,
   getProdutos,
+  getRun,
+  triggerSweep,
 } from "@/lib/api";
 
 const SIG: Record<string, { cor: string; label: string }> = {
@@ -106,6 +110,9 @@ export default function Dashboard() {
   const [custo, setCusto] = useState<CustoResp | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [dry, setDry] = useState(false);
+  const [sweeping, setSweeping] = useState(false);
+  const [sweepMsg, setSweepMsg] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -124,6 +131,78 @@ export default function Dashboard() {
   useEffect(() => {
     load();
   }, [load]);
+
+  // acompanha um run até terminar; ao concluir, recarrega a lista
+  const pollRun = useCallback(
+    async (id: number) => {
+      setSweeping(true);
+      for (let i = 0; i < 900; i++) {
+        try {
+          const run = await getRun(id);
+          if (run.status === "running" || run.status === "queued") {
+            setSweepMsg(`varredura em andamento… (${run.mode})`);
+          } else {
+            setSweeping(false);
+            if (run.status === "done") {
+              const s = run.summary;
+              setSweepMsg(
+                `✓ ${s?.sobreviventes ?? 0} produtos · ${s?.creditos_gastos ?? "?"} créditos`,
+              );
+              await load();
+            } else if (run.status === "error") {
+              setSweepMsg(`✗ erro: ${run.error ?? "desconhecido"}`);
+            } else {
+              setSweepMsg("varredura interrompida");
+            }
+            return;
+          }
+        } catch {
+          setSweeping(false);
+          setSweepMsg("perdi contato com a API");
+          return;
+        }
+        await new Promise((r) => setTimeout(r, 2000));
+      }
+      setSweeping(false);
+    },
+    [load],
+  );
+
+  // retoma o polling se já houver uma varredura rodando ao abrir
+  useEffect(() => {
+    getLatestRun()
+      .then((s) => {
+        if (s.running && s.ultima) pollRun(s.ultima.id);
+      })
+      .catch(() => {});
+  }, [pollRun]);
+
+  const runSweep = useCallback(async () => {
+    if (sweeping) return;
+    setSweepMsg(null);
+    let token = typeof window !== "undefined" ? localStorage.getItem("garimpo_token") ?? undefined : undefined;
+    const fire = async (t?: string) => triggerSweep(dry, t);
+    try {
+      const { run_id } = await fire(token);
+      pollRun(run_id);
+    } catch (e) {
+      if (e instanceof TriggerError && e.code === 401) {
+        const t = window.prompt("Token de disparo (TRIGGER_TOKEN da API):") ?? "";
+        if (!t) return setSweepMsg("disparo cancelado (sem token)");
+        localStorage.setItem("garimpo_token", t);
+        try {
+          const { run_id } = await fire(t);
+          pollRun(run_id);
+        } catch {
+          setSweepMsg("token rejeitado");
+        }
+      } else if (e instanceof TriggerError && e.code === 409) {
+        setSweepMsg("já existe uma varredura em andamento");
+      } else {
+        setSweepMsg("falha ao disparar");
+      }
+    }
+  }, [dry, sweeping, pollRun]);
 
   const set = (patch: Partial<Filtros>) => setF((v) => ({ ...v, ...patch }));
   const hoje = custo?.dias?.[custo.dias.length - 1];
@@ -164,6 +243,17 @@ export default function Dashboard() {
             </div>
           ))}
         </div>
+      </section>
+
+      <section className="actions">
+        <button className="btn" onClick={runSweep} disabled={sweeping}>
+          {sweeping ? "⣾ minerando…" : "◆ rodar varredura"}
+        </button>
+        <label className="dry">
+          <input type="checkbox" checked={dry} onChange={(e) => setDry(e.target.checked)} />
+          modo teste (dry-run, gasto zero)
+        </label>
+        {sweepMsg && <span className="runmsg">{sweepMsg}</span>}
       </section>
 
       <section className="filters">

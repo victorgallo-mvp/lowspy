@@ -56,3 +56,45 @@ export async function getCusto(): Promise<CustoResp> {
   if (!r.ok) throw new Error(`API ${r.status}`);
   return r.json();
 }
+
+export type Run = {
+  id: number;
+  status: "queued" | "running" | "done" | "error" | "interrupted";
+  mode: string;
+  summary: {
+    sobreviventes?: number;
+    total_buscado?: number;
+    creditos_gastos?: number | null;
+    breadth?: Record<string, number>;
+  } | null;
+  error: string | null;
+  started_at: string | null;
+  finished_at: string | null;
+};
+
+export class TriggerError extends Error {
+  constructor(public code: number) {
+    super(`trigger ${code}`);
+  }
+}
+
+export async function triggerSweep(dry: boolean, token?: string): Promise<{ run_id: number }> {
+  const r = await fetch(`${API_BASE}/varredura?dry=${dry}`, {
+    method: "POST",
+    headers: token ? { "X-API-Token": token } : {},
+  });
+  if (!r.ok) throw new TriggerError(r.status); // 401 token, 409 já rodando
+  return r.json();
+}
+
+export async function getRun(id: number): Promise<Run> {
+  const r = await fetch(`${API_BASE}/varredura/${id}`, { cache: "no-store" });
+  if (!r.ok) throw new Error(`API ${r.status}`);
+  return r.json();
+}
+
+export async function getLatestRun(): Promise<{ running: boolean; ultima: Run | null }> {
+  const r = await fetch(`${API_BASE}/varredura/status`, { cache: "no-store" });
+  if (!r.ok) throw new Error(`API ${r.status}`);
+  return r.json();
+}

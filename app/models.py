@@ -116,6 +116,21 @@ class Produto(Base):
     created_at = Column(DateTime, server_default=func.now())
 
 
+class Run(Base):
+    """Job de varredura disparado pelo dashboard (assíncrono). Status + resumo."""
+
+    __tablename__ = "runs"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    status = Column(String(20), default="queued")  # queued|running|done|error|interrupted
+    mode = Column(String(10), default="live")       # live|dry-run
+    started_at = Column(DateTime, nullable=True)
+    finished_at = Column(DateTime, nullable=True)
+    summary = Column(JSON, nullable=True)
+    error = Column(Text, nullable=True)
+    created_at = Column(DateTime, server_default=func.now())
+
+
 class CostLog(Base):
     """Log de custo por chamada (API). Endpoint /custo/dia lê daqui na Fase 3."""
 
