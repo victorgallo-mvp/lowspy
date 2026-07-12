@@ -13,7 +13,7 @@ from tenacity import (
 )
 
 from .config import FIXTURES
-from .schemas import CommentSchema, SearchItem, hashtag_to_item
+from .schemas import CommentSchema, SearchItem, extract_cover, hashtag_to_item
 
 BASE_URL = "https://api.scrapecreators.com"
 
@@ -58,7 +58,13 @@ class LiveClient:
         }
         data = self._get("/v1/tiktok/search/top", params)
         self.on_call("search_top", data.get("credits_remaining"), {"query": query})
-        return [SearchItem.model_validate(it) for it in data.get("items", [])]
+        items = []
+        for it in data.get("items", []):
+            si = SearchItem.model_validate(it)
+            if not si.cover_url:
+                si.cover_url = extract_cover(it)
+            items.append(si)
+        return items
 
     def video_comments(self, url: str) -> list[CommentSchema]:
         # trim=false: trim=true devolve só ~4 comentários-lixo e mata o gate.

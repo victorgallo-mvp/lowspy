@@ -17,6 +17,7 @@ export type Produto = {
   preco: string | null;
   nicho: string | null;
   url: string;
+  cover_url: string | null;
   engajamento: { curtidas: number; comentarios: number };
   score_componentes: {
     comment_score: number;

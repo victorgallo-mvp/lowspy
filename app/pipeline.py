@@ -57,6 +57,8 @@ def upsert_post(session, item, market: str) -> Post:
         post = Post(id=item.id)
         session.add(post)
     post.url = item.url
+    if item.cover_url:
+        post.cover_url = item.cover_url
     post.descricao = item.desc
     post.content_type = item.content_type
     post.create_time = item.ct_int()

@@ -15,8 +15,8 @@ import {
 } from "@/lib/api";
 
 const SIG: Record<string, { cor: string; label: string }> = {
-  demanda_confirmada: { cor: "#cbf24e", label: "demanda confirmada" },
-  vendedor_off_platform: { cor: "#f2a640", label: "vendedor · off-platform" },
+  demanda_confirmada: { cor: "#16a34a", label: "demanda confirmada" },
+  vendedor_off_platform: { cor: "#c2621a", label: "vendedor · off-platform" },
 };
 const MERCADO: Record<string, string> = {
   fisico_revenda: "físico · revenda",
@@ -29,11 +29,12 @@ const brl = (n: number) => n.toLocaleString("pt-BR");
 const usd = (n: number) => `US$ ${n.toFixed(2)}`;
 
 function sigOf(s: string) {
-  return SIG[s] ?? { cor: "#676a58", label: s };
+  return SIG[s] ?? { cor: "#5c6159", label: s };
 }
 
 function Row({ p, i }: { p: Produto; i: number }) {
   const [open, setOpen] = useState(false);
+  const [imgOk, setImgOk] = useState(true);
   const sig = sigOf(p.sinal);
   const comments = open ? p.comentarios_intencao : p.comentarios_intencao.slice(0, 2);
   return (
@@ -45,6 +46,14 @@ function Row({ p, i }: { p: Produto; i: number }) {
         <span className="hash">#</span>
         {String(i + 1).padStart(2, "0")}
       </div>
+
+      <a className="thumb" href={p.url} target="_blank" rel="noreferrer" aria-label="abrir no tiktok">
+        {p.cover_url && imgOk ? (
+          <img src={p.cover_url} alt="" loading="lazy" onError={() => setImgOk(false)} />
+        ) : (
+          <span className="ph">▶</span>
+        )}
+      </a>
 
       <div className="main">
         <div className="title">{p.produto}</div>
@@ -180,7 +189,7 @@ export default function Dashboard() {
   const runSweep = useCallback(async () => {
     if (sweeping) return;
     setSweepMsg(null);
-    let token = typeof window !== "undefined" ? localStorage.getItem("garimpo_token") ?? undefined : undefined;
+    let token = typeof window !== "undefined" ? localStorage.getItem("lowspy_token") ?? undefined : undefined;
     const fire = async (t?: string) => triggerSweep(dry, t);
     try {
       const { run_id } = await fire(token);
@@ -189,7 +198,7 @@ export default function Dashboard() {
       if (e instanceof TriggerError && e.code === 401) {
         const t = window.prompt("Token de disparo (TRIGGER_TOKEN da API):") ?? "";
         if (!t) return setSweepMsg("disparo cancelado (sem token)");
-        localStorage.setItem("garimpo_token", t);
+        localStorage.setItem("lowspy_token", t);
         try {
           const { run_id } = await fire(t);
           pollRun(run_id);
@@ -213,7 +222,7 @@ export default function Dashboard() {
       <header className="top">
         <div className="brand">
           <h1>
-            GARIMPO<span className="dot">.</span>
+            Low<span className="dot">Spy</span>
           </h1>
           <span className="kicker">radar de demanda</span>
         </div>
@@ -306,7 +315,7 @@ export default function Dashboard() {
           erro: {err} · confira se a API está no ar em <b>{process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}</b>
         </div>
       ) : loading && !data ? (
-        <div className="state">varrendo o garimpo…</div>
+        <div className="state">carregando o radar…</div>
       ) : data && data.produtos.length === 0 ? (
         <div className="state">
           nenhum produto bateu os filtros. rode uma varredura: <b>python -m app.pipeline --live</b>

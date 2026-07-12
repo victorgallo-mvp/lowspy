@@ -61,6 +61,7 @@ def _serialize(pr: Produto, post: Post, sc: Score) -> dict:
         "preco": pr.preco,
         "nicho": pr.nicho,
         "url": post.url,
+        "cover_url": post.cover_url,
         "engajamento": {"curtidas": post.digg_count, "comentarios": post.comment_count},
         "score_componentes": {
             "comment_score": sc.comment_score,

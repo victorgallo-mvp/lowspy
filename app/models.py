@@ -43,6 +43,7 @@ class Post(Base):
 
     id = Column(String(40), primary_key=True)  # aweme_id
     url = Column(Text, nullable=False)
+    cover_url = Column(Text, nullable=True)  # capa do TikTok p/ preview (pode expirar)
     descricao = Column(Text, default="")
     content_type = Column(String(32), default="")
     create_time = Column(BigInteger, nullable=True)

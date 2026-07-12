@@ -16,7 +16,24 @@ engine = create_engine(DATABASE_URL, future=True, connect_args=_connect_args)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False, future=True)
 
 
+def _ensure_columns() -> None:
+    """Migração leve idempotente: create_all NÃO altera tabela existente, então
+    adicionamos colunas novas via ALTER (portável SQLite/Postgres)."""
+    from sqlalchemy import inspect, text
+
+    insp = inspect(engine)
+    tables = insp.get_table_names()
+    checks = [("posts", "cover_url", "TEXT")]
+    for table, col, coltype in checks:
+        if table in tables:
+            existing = {c["name"] for c in insp.get_columns(table)}
+            if col not in existing:
+                with engine.begin() as conn:
+                    conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {col} {coltype}"))
+
+
 def init_db() -> None:
     from . import models  # noqa: F401  (registra as tabelas)
 
     Base.metadata.create_all(engine)
+    _ensure_columns()

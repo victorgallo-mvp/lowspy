@@ -22,7 +22,7 @@ const mono = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "GARIMPO — radar de demanda",
+  title: "LowSpy — radar de demanda",
   description: "Produtos low-ticket com demanda real, minerados do TikTok orgânico.",
 };
 
