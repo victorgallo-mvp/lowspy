@@ -20,14 +20,17 @@ def test_health():
     assert client.get("/health").json() == {"ok": True}
 
 
-def test_listar_produtos_ranked(session):
+def test_listar_produtos_ordena_por_views(session):
     _seed_and_sweep(session)
-    r = client.get("/produtos?limit=10")
+    r = client.get("/produtos?limit=10")  # default sort=views (viralização)
     assert r.status_code == 200
     body = r.json()
     assert body["total"] >= 1
-    scores = [p["score"] for p in body["produtos"]]
-    assert scores == sorted(scores, reverse=True)  # melhor primeiro
+    views = [p["engajamento"]["views"] for p in body["produtos"]]
+    assert views == sorted(views, reverse=True)  # mais viral primeiro
+    # sort=score volta a ordenar por score
+    scores = [p["score"] for p in client.get("/produtos?sort=score").json()["produtos"]]
+    assert scores == sorted(scores, reverse=True)
     # LGPD: sem nick nos comentários
     assert "comentarios_intencao" in body["produtos"][0]
 

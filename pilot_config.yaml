@@ -119,6 +119,7 @@ discovery:
       - "moldes"
       - "printable"
       - "planilhas"
+      - "planilhaexcel"
       - "materialdigital"
       - "arquivodigital"
       - "editaveiscanva"
@@ -156,7 +157,8 @@ thresholds:
   abs_min_likes: 10
   relative_top_frac: 0.75  # mantém os 75% mais comentados de cada hashtag
   intent_threshold: 2.0    # Nível 1: score mínimo pra sobreviver (afrouxado p/ + resultados)
-  recency_days: 21         # só posts recentes (mata viral "evergreen" que ressurge toda busca)
+  recency_days: 90         # infoproduto é evergreen (vende por meses); ranqueia por views, não data
+  exigir_demanda_confirmada: true  # modo teste: só produtos com demanda confirmada no comentário
 
 # --- Score final: demanda dominante + engajamento ponderado (Bloco 3) -------
 score:
@@ -194,9 +196,10 @@ weights:
 caps:
   max_search_pages: 1        # páginas de busca por keyword
   max_hashtags: 15           # teto de chamadas /search/hashtag no run
-  max_comment_fetches: 40    # teto rígido de fetches de comentário no run inteiro
+  max_comment_fetches: 80    # teto de fetches de comentário (maior p/ confirmar ~30)
   max_posts_per_author: 2    # dedup: até N posts do mesmo autor (variedade + volume)
-  max_pages_per_hashtag: 2   # pagina fundo p/ achar produtos NOVOS (não repetir)
+  max_pages_per_hashtag: 3   # pagina fundo p/ oferta (não repetir os mesmos)
+  target_produtos: 30        # para de gastar fetch ao atingir a meta
 
 # --- Precificação (ajustar ao teu plano) ------------------------------------
 pricing:

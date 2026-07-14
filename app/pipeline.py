@@ -190,82 +190,77 @@ def run_sweep(session, cfg: dict, live: bool,
             upsert_post(session, it, it.market)
         session.commit()
 
-        # Dedup p/ FETCH: até N posts por autor (variedade + volume p/ ≥30)
+        # Dedup por autor + ordena por VIEWS (os mais virais primeiro)
         from collections import Counter
         author_count: Counter = Counter()
         max_per_author = cfg["caps"].get("max_posts_per_author", 2)
-        by_market: dict[str, list] = {}
-        for it in sorted(n0_by_id.values(), key=lambda x: x.statistics.comment_count, reverse=True):
+        candidates: list = []
+        for it in sorted(n0_by_id.values(), key=lambda x: x.statistics.play_count, reverse=True):
             if not it.url or author_count[it.author_id] >= max_per_author:
                 continue
             author_count[it.author_id] += 1
-            by_market.setdefault(it.market, []).append(it)
+            candidates.append(it)
 
-        # N0.5 (grátis): NOVO primeiro, depois sinal-de-legenda; cota por mercado
-        for mkt in by_market:
-            by_market[mkt].sort(
-                key=lambda x: (x.novo, caption_seller_score(x.desc, cfg)["score"],
-                               x.statistics.comment_count),
-                reverse=True,
-            )
-        n_markets = max(1, len(by_market))
-        quota = max(2, max_fetches // n_markets)
-
+        # N1: fetch pago dos mais VIRAIS primeiro, gate de demanda, até bater a meta
+        exigir = cfg["thresholds"].get("exigir_demanda_confirmada", False)
+        target = cfg["caps"].get("target_produtos", 9999)
         comment_fetches = 0
         survivors = 0
         novos = 0
-        for mkt, items in by_market.items():
-            for it in items[:quota]:
-                if comment_fetches >= max_fetches:
-                    break
-                cap = caption_seller_score(it.desc, cfg)
-                try:
-                    comments = client.video_comments(it.url)
-                except Exception as e:
-                    LOG.error("Comentários falharam p/ %s: %s", it.url, e)
+        for it in candidates:
+            if comment_fetches >= max_fetches or survivors >= target:
+                break
+            cap = caption_seller_score(it.desc, cfg)
+            try:
+                comments = client.video_comments(it.url)
+            except Exception as e:
+                LOG.error("Comentários falharam p/ %s: %s", it.url, e)
+                continue
+            comment_fetches += 1
+            texts = [c.text for c in comments if c.text]
+            intent = intent_score(texts, it.desc, cfg)
+            combined = round(intent["score"] + cap["score"], 2)
+            sinal = classify_signal(intent, cap, cfg)
+
+            # persiste comentários (dedup por cid) marcando os de intenção
+            intent_set = set(intent["matched_comments"])
+            for c in comments:
+                if not c.cid:
                     continue
-                comment_fetches += 1
-                texts = [c.text for c in comments if c.text]
-                intent = intent_score(texts, it.desc, cfg)
-                combined = round(intent["score"] + cap["score"], 2)
-                sinal = classify_signal(intent, cap, cfg)
+                cm = session.get(Comment, {"cid": c.cid, "post_id": it.id})
+                if cm is None:
+                    cm = Comment(cid=c.cid, post_id=it.id)
+                    session.add(cm)
+                cm.texto = c.text
+                cm.digg_count = c.digg_count
+                cm.reply_total = c.reply_comment_total
+                try:
+                    cm.create_time = int(c.create_time)
+                except (TypeError, ValueError):
+                    cm.create_time = None
+                cm.is_intent = c.text in intent_set
 
-                # persiste comentários (dedup por cid) marcando os de intenção
-                intent_set = set(intent["matched_comments"])
-                for c in comments:
-                    if not c.cid:
-                        continue
-                    cm = session.get(Comment, {"cid": c.cid, "post_id": it.id})
-                    if cm is None:
-                        cm = Comment(cid=c.cid, post_id=it.id)
-                        session.add(cm)
-                    cm.texto = c.text
-                    cm.digg_count = c.digg_count
-                    cm.reply_total = c.reply_comment_total
-                    try:
-                        cm.create_time = int(c.create_time)
-                    except (TypeError, ValueError):
-                        cm.create_time = None
-                    cm.is_intent = c.text in intent_set
-
-                # Bloco 3: demanda (dominante) + engajamento log-ponderado
-                demanda_norm = normalize_score(combined, cfg)
-                score_val, engaj = final_score(
-                    demanda_norm, it.statistics.play_count,
-                    it.statistics.digg_count, it.statistics.comment_count, cfg,
-                )
-                upsert_score(session, it.id, intent, cap, score_val, sinal, engaj)
-                post = session.get(Post, it.id)
-                post.processed_at = datetime.now(timezone.utc)
-                if combined >= thr and sinal != "sem_sinal":
-                    upsert_produto(session, post, score_val, sinal,
-                                   extract_price(it.desc, *texts), run_id, novo=it.novo)
-                    survivors += 1
-                    if it.novo:
-                        novos += 1
-                LOG.info("  N1 [%s] %s%s score=%.1f (dem=%.0f eng=%.0f) | %s",
-                         mkt, sinal, " NOVO" if it.novo else "", score_val,
-                         demanda_norm, engaj, it.desc[:42])
+            demanda_norm = normalize_score(combined, cfg)
+            score_val, engaj = final_score(
+                demanda_norm, it.statistics.play_count,
+                it.statistics.digg_count, it.statistics.comment_count, cfg,
+            )
+            upsert_score(session, it.id, intent, cap, score_val, sinal, engaj)
+            post = session.get(Post, it.id)
+            post.processed_at = datetime.now(timezone.utc)
+            # gate: no modo teste, exige DEMANDA CONFIRMADA no comentário
+            ok = combined >= thr and (
+                sinal == "demanda_confirmada" if exigir else sinal != "sem_sinal"
+            )
+            if ok:
+                upsert_produto(session, post, score_val, sinal,
+                               extract_price(it.desc, *texts), run_id, novo=it.novo)
+                survivors += 1
+                if it.novo:
+                    novos += 1
+            LOG.info("  N1 [%s] %s%s views=%s score=%.1f | %s",
+                     it.market, sinal, " NOVO" if it.novo else "",
+                     it.statistics.play_count, score_val, it.desc[:40])
         session.commit()
     finally:
         client.close()
@@ -281,7 +276,7 @@ def run_sweep(session, cfg: dict, live: bool,
         "fisico_dropados": fisico_dropped,
         "highticket_dropados": highticket_dropped,
         "velhos_dropados": velho_dropped,
-        "n0_posts": sum(len(v) for v in by_market.values()),
+        "n0_posts": len(candidates),
         "comment_fetches": comment_fetches,
         "novos": novos,
         "sobreviventes": survivors,

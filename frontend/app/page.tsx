@@ -123,7 +123,7 @@ function Row({ p, i }: { p: Produto; i: number }) {
 }
 
 export default function Dashboard() {
-  const [f, setF] = useState<Filtros>({ limit: 60, run: "latest", only_new: true });
+  const [f, setF] = useState<Filtros>({ limit: 60, run: "latest", only_new: false });
   const [data, setData] = useState<ProdutosResp | null>(null);
   const [custo, setCusto] = useState<CustoResp | null>(null);
   const [varreduras, setVarreduras] = useState<Varredura[]>([]);

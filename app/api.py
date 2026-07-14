@@ -100,6 +100,7 @@ def listar_produtos(
     preco_max: Optional[float] = None,
     run: str = Query("latest", description="latest | all | <run_id>"),
     only_new: bool = Query(False, description="só produtos novos (não vistos antes)"),
+    sort: str = Query("views", description="views (viralização) | score"),
 ):
     q = (
         select(Produto, Post, Score)
@@ -128,7 +129,8 @@ def listar_produtos(
             rid = _latest_run_id(db)
         if rid is not None:
             q = q.where(Produto.run_id == rid)
-    q = q.order_by(Produto.score_final.desc()).limit(limit)
+    order_col = Post.play_count.desc() if sort == "views" else Produto.score_final.desc()
+    q = q.order_by(order_col).limit(limit)
     itens = [_serialize(pr, post, sc) for pr, post, sc in db.execute(q).all()]
     # filtro de preço aplicado em Python (preço é string livre extraída)
     if preco_max is not None:
