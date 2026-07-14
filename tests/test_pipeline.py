@@ -1,5 +1,5 @@
 from app.config import load_config
-from app.models import Comment, CostLog, Keyword, Post, Produto, Score
+from app.models import Comment, CostLog, Keyword, Post, Produto, Run, Score
 from app.pipeline import ranked_products, run_sweep
 
 CFG = load_config()
@@ -36,6 +36,21 @@ def test_sweep_is_idempotent(session):
     run_sweep(session, CFG, live=False)  # re-varredura
     assert session.query(Post).count() == posts_1  # não duplica post
     assert session.query(Score).count() == scores_1  # 1 score por post
+
+
+def test_run_id_separa_por_varredura(session):
+    _seed_keyword(session)
+    r1 = Run(status="running", mode="dry-run")
+    session.add(r1); session.commit()
+    run_sweep(session, CFG, live=False, run_id=r1.id)
+    assert session.query(Produto).count() >= 1
+    assert all(p.run_id == r1.id for p in session.query(Produto).all())
+
+    # nova varredura re-acha os mesmos posts → produtos migram pro run atual
+    r2 = Run(status="running", mode="dry-run")
+    session.add(r2); session.commit()
+    run_sweep(session, CFG, live=False, run_id=r2.id)
+    assert all(p.run_id == r2.id for p in session.query(Produto).all())
 
 
 def test_ranked_products_orders_by_score(session):

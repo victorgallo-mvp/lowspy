@@ -108,6 +108,7 @@ class Produto(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     post_id = Column(String(40), ForeignKey("posts.id"), nullable=False, unique=True, index=True)
+    run_id = Column(Integer, ForeignKey("runs.id"), nullable=True, index=True)  # varredura que achou
     produto = Column(String(200), nullable=True)
     preco = Column(String(40), nullable=True)
     nicho = Column(String(80), nullable=True)

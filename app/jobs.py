@@ -40,7 +40,7 @@ def _worker(run_id: int, live: bool, max_hashtags: Optional[int],
         session.commit()
 
         cfg = config.load_config()
-        summary = run_sweep(session, cfg, live, max_hashtags, max_comment_fetches)
+        summary = run_sweep(session, cfg, live, max_hashtags, max_comment_fetches, run_id=run_id)
 
         run = session.get(Run, run_id)
         run.status = "done"

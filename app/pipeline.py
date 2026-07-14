@@ -88,7 +88,8 @@ def upsert_score(session, post_id: str, intent: dict, cap: dict, combined: float
     sc.sinal = sinal
 
 
-def upsert_produto(session, post, combined: float, sinal: str, preco) -> None:
+def upsert_produto(session, post, combined: float, sinal: str, preco,
+                   run_id=None) -> None:
     pr = session.execute(select(Produto).where(Produto.post_id == post.id)).scalar_one_or_none()
     if pr is None:
         pr = Produto(post_id=post.id)
@@ -96,6 +97,7 @@ def upsert_produto(session, post, combined: float, sinal: str, preco) -> None:
     pr.mercado = post.market
     pr.sinal = sinal
     pr.score_final = combined
+    pr.run_id = run_id  # re-achado numa nova varredura → migra pro run atual
     if preco:
         pr.preco = preco
 
@@ -105,7 +107,8 @@ def upsert_produto(session, post, combined: float, sinal: str, preco) -> None:
 # --------------------------------------------------------------------------- #
 def run_sweep(session, cfg: dict, live: bool,
               max_hashtags: Optional[int] = None,
-              max_comment_fetches: Optional[int] = None) -> dict[str, Any]:
+              max_comment_fetches: Optional[int] = None,
+              run_id: Optional[int] = None) -> dict[str, Any]:
     caps = cfg["caps"]
     max_hashtags = max_hashtags or caps.get("max_hashtags", 999)
     max_fetches = max_comment_fetches or caps.get("max_comment_fetches", 999)
@@ -157,13 +160,15 @@ def run_sweep(session, cfg: dict, live: bool,
             upsert_post(session, it, it.market)
         session.commit()
 
-        # Dedup p/ FETCH: 1 post por autor (breadth + economia de crédito)
-        seen_authors: set[str] = set()
+        # Dedup p/ FETCH: até N posts por autor (variedade + volume p/ ≥30)
+        from collections import Counter
+        author_count: Counter = Counter()
+        max_per_author = cfg["caps"].get("max_posts_per_author", 2)
         by_market: dict[str, list] = {}
         for it in sorted(n0_by_id.values(), key=lambda x: x.statistics.comment_count, reverse=True):
-            if not it.url or it.author_id in seen_authors:
+            if not it.url or author_count[it.author_id] >= max_per_author:
                 continue
-            seen_authors.add(it.author_id)
+            author_count[it.author_id] += 1
             by_market.setdefault(it.market, []).append(it)
 
         # N0.5 (grátis): prioriza por sinal-de-legenda; cota por mercado
@@ -217,7 +222,8 @@ def run_sweep(session, cfg: dict, live: bool,
                 post = session.get(Post, it.id)
                 post.processed_at = datetime.now(timezone.utc)
                 if combined >= thr and sinal != "sem_sinal":
-                    upsert_produto(session, post, norm, sinal, extract_price(it.desc, *texts))
+                    upsert_produto(session, post, norm, sinal,
+                                   extract_price(it.desc, *texts), run_id)
                     survivors += 1
                 LOG.info("  N1 [%s] %s tot=%.1f norm=%.1f | %s",
                          mkt, sinal, combined, norm, it.desc[:45])

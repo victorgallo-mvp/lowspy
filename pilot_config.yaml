@@ -121,6 +121,12 @@ discovery:
       - "planilhas"
       - "materialdigital"
       - "arquivodigital"
+      - "editaveiscanva"
+      - "atividadesparaimprimir"
+      - "packdigital"
+      - "apostiladigital"
+      - "papelariacriativa"
+      - "treinonailart"
     # Formato criativo/editável
     formato_criativo:
       - "templatecanva"
@@ -164,8 +170,9 @@ weights:
 # --- Caps do run --live (escala "enxuto ~50 créditos") ----------------------
 caps:
   max_search_pages: 1        # páginas de busca por keyword
-  max_hashtags: 12           # teto de chamadas /search/hashtag no run
-  max_comment_fetches: 30    # teto rígido de fetches de comentário no run inteiro
+  max_hashtags: 15           # teto de chamadas /search/hashtag no run
+  max_comment_fetches: 40    # teto rígido de fetches de comentário no run inteiro
+  max_posts_per_author: 2    # dedup: até N posts do mesmo autor (variedade + volume)
 
 # --- Precificação (ajustar ao teu plano) ------------------------------------
 pricing:

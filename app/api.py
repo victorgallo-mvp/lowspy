@@ -12,7 +12,7 @@ from typing import Optional
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from . import config, jobs
 from .db import SessionLocal, init_db
@@ -79,14 +79,17 @@ def health():
     return {"ok": True}
 
 
+def _latest_run_id(db) -> Optional[int]:
+    return db.execute(select(func.max(Produto.run_id))).scalar()
+
+
 @app.get("/produtos")
 def listar_produtos(
     db=Depends(get_db),
-    limit: int = Query(50, ge=1, le=200),
+    limit: int = Query(60, ge=1, le=200),
     min_score: float = Query(0.0, ge=0, le=100),
-    mercado: Optional[str] = None,
-    sinal: Optional[str] = None,
     preco_max: Optional[float] = None,
+    run: str = Query("latest", description="latest | all | <run_id>"),
 ):
     q = (
         select(Produto, Post, Score)
@@ -94,10 +97,18 @@ def listar_produtos(
         .join(Score, Score.post_id == Post.id)
         .where(Produto.score_final >= min_score)
     )
-    if mercado:
-        q = q.where(Produto.mercado == mercado)
-    if sinal:
-        q = q.where(Produto.sinal == sinal)
+    # filtro por varredura: "latest" (padrão) mostra só os resultados da última busca
+    if run != "all":
+        rid: Optional[int] = None
+        if run and run != "latest":
+            try:
+                rid = int(run)
+            except ValueError:
+                rid = None
+        if rid is None:
+            rid = _latest_run_id(db)
+        if rid is not None:
+            q = q.where(Produto.run_id == rid)
     q = q.order_by(Produto.score_final.desc()).limit(limit)
     itens = [_serialize(pr, post, sc) for pr, post, sc in db.execute(q).all()]
     # filtro de preço aplicado em Python (preço é string livre extraída)
@@ -193,3 +204,24 @@ def varredura_run(run_id: int, db=Depends(get_db)):
     if not run:
         raise HTTPException(status_code=404, detail="run não encontrado")
     return _run_dict(run)
+
+
+@app.get("/varreduras")
+def listar_varreduras(db=Depends(get_db), limit: int = Query(20, ge=1, le=100)):
+    """Varreduras recentes + nº de produtos de cada — alimenta o seletor do dash."""
+    runs = db.execute(select(Run).order_by(Run.id.desc()).limit(limit)).scalars().all()
+    counts = dict(
+        db.execute(select(Produto.run_id, func.count()).group_by(Produto.run_id)).all()
+    )
+    return {
+        "varreduras": [
+            {
+                "id": r.id,
+                "status": r.status,
+                "mode": r.mode,
+                "finished_at": r.finished_at.isoformat() if r.finished_at else None,
+                "n_produtos": counts.get(r.id, 0),
+            }
+            for r in runs
+        ]
+    }

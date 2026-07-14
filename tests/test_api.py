@@ -32,15 +32,6 @@ def test_listar_produtos_ranked(session):
     assert "comentarios_intencao" in body["produtos"][0]
 
 
-def test_filtro_por_mercado(session):
-    _seed_and_sweep(session)
-    r = client.get("/produtos?mercado=fisico_revenda")
-    assert r.status_code == 200
-    assert all(p["mercado"] == "fisico_revenda" for p in r.json()["produtos"])
-    # mercado inexistente → vazio
-    assert client.get("/produtos?mercado=inexistente").json()["total"] == 0
-
-
 def test_detalhe_404(session):
     _seed_and_sweep(session)
     assert client.get("/produtos/nao_existe").status_code == 404
@@ -73,6 +64,22 @@ def test_varredura_dispara_assincrono(session):
     assert st["status"] == "done"
     assert st["summary"]["sobreviventes"] >= 1
     assert client.get("/produtos").json()["total"] >= 1  # populou o dashboard
+
+
+def test_varreduras_lista_e_filtro_por_run(session):
+    session.add(Keyword(termo="achadinhos", tipo="hashtag", mercado="fisico_revenda",
+                        sinal_esperado="demanda", ativo=True))
+    session.commit()
+    r = client.post("/varredura?dry=true")
+    rid = r.json()["run_id"]
+    _wait_run(rid)
+    # a varredura aparece na lista com contagem de produtos
+    vs = client.get("/varreduras").json()["varreduras"]
+    assert any(v["id"] == rid and v["n_produtos"] >= 1 for v in vs)
+    # /produtos?run=<id> traz só os daquela varredura
+    assert client.get(f"/produtos?run={rid}").json()["total"] >= 1
+    # latest = a última varredura
+    assert client.get("/produtos?run=latest").json()["total"] >= 1
 
 
 def test_varredura_token_protege(session, monkeypatch):
