@@ -62,7 +62,11 @@ def _serialize(pr: Produto, post: Post, sc: Score) -> dict:
         "nicho": pr.nicho,
         "url": post.url,
         "cover_url": post.cover_url,
-        "engajamento": {"curtidas": post.digg_count, "comentarios": post.comment_count},
+        "engajamento": {
+            "curtidas": post.digg_count,
+            "comentarios": post.comment_count,
+            "views": post.play_count,
+        },
         "score_componentes": {
             "comment_score": sc.comment_score,
             "caption_score": sc.caption_score,
@@ -88,6 +92,9 @@ def listar_produtos(
     db=Depends(get_db),
     limit: int = Query(60, ge=1, le=200),
     min_score: float = Query(0.0, ge=0, le=100),
+    min_views: int = Query(0, ge=0),
+    min_likes: int = Query(0, ge=0),
+    min_comments: int = Query(0, ge=0),
     preco_max: Optional[float] = None,
     run: str = Query("latest", description="latest | all | <run_id>"),
 ):
@@ -97,6 +104,13 @@ def listar_produtos(
         .join(Score, Score.post_id == Post.id)
         .where(Produto.score_final >= min_score)
     )
+    # filtros de engajamento (a régua é do operador)
+    if min_views:
+        q = q.where(Post.play_count >= min_views)
+    if min_likes:
+        q = q.where(Post.digg_count >= min_likes)
+    if min_comments:
+        q = q.where(Post.comment_count >= min_comments)
     # filtro por varredura: "latest" (padrão) mostra só os resultados da última busca
     if run != "all":
         rid: Optional[int] = None

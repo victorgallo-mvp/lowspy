@@ -18,7 +18,7 @@ export type Produto = {
   nicho: string | null;
   url: string;
   cover_url: string | null;
-  engajamento: { curtidas: number; comentarios: number };
+  engajamento: { curtidas: number; comentarios: number; views: number };
   score_componentes: {
     comment_score: number;
     caption_score: number;
@@ -40,23 +40,41 @@ export type CustoDia = {
 export type CustoResp = { credit_usd: number; dias: CustoDia[] };
 
 export type Filtros = {
-  mercado?: string;
-  sinal?: string;
   min_score?: number;
+  min_views?: number;
+  min_likes?: number;
+  min_comments?: number;
   preco_max?: number;
   limit?: number;
+  run?: string; // latest | all | <id>
+};
+
+export type Varredura = {
+  id: number;
+  status: string;
+  mode: string;
+  finished_at: string | null;
+  n_produtos: number;
 };
 
 export async function getProdutos(f: Filtros): Promise<ProdutosResp> {
   const q = new URLSearchParams();
-  if (f.mercado) q.set("mercado", f.mercado);
-  if (f.sinal) q.set("sinal", f.sinal);
   if (f.min_score) q.set("min_score", String(f.min_score));
+  if (f.min_views) q.set("min_views", String(f.min_views));
+  if (f.min_likes) q.set("min_likes", String(f.min_likes));
+  if (f.min_comments) q.set("min_comments", String(f.min_comments));
   if (f.preco_max) q.set("preco_max", String(f.preco_max));
-  q.set("limit", String(f.limit ?? 50));
+  q.set("run", f.run ?? "latest");
+  q.set("limit", String(f.limit ?? 60));
   const r = await fetch(`${API_BASE}/produtos?${q.toString()}`, { cache: "no-store" });
   if (!r.ok) throw new Error(`API ${r.status}`);
   return r.json();
+}
+
+export async function getVarreduras(): Promise<Varredura[]> {
+  const r = await fetch(`${API_BASE}/varreduras`, { cache: "no-store" });
+  if (!r.ok) throw new Error(`API ${r.status}`);
+  return (await r.json()).varreduras;
 }
 
 export async function getCusto(): Promise<CustoResp> {

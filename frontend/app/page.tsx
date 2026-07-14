@@ -7,41 +7,48 @@ import {
   Produto,
   ProdutosResp,
   TriggerError,
+  Varredura,
   getCusto,
   getLatestRun,
   getProdutos,
   getRun,
+  getVarreduras,
   triggerSweep,
 } from "@/lib/api";
 
-const SIG: Record<string, { cor: string; label: string }> = {
-  demanda_confirmada: { cor: "#16a34a", label: "demanda confirmada" },
-  vendedor_off_platform: { cor: "#c2621a", label: "vendedor · off-platform" },
-};
-const MERCADO: Record<string, string> = {
-  fisico_revenda: "físico · revenda",
-  digital_info: "digital · info",
-  criativo: "criativo",
-  nicho: "nicho",
-};
-
-const brl = (n: number) => n.toLocaleString("pt-BR");
+const compact = (n: number) =>
+  new Intl.NumberFormat("pt-BR", { notation: "compact", maximumFractionDigits: 1 }).format(n || 0);
 const usd = (n: number) => `US$ ${n.toFixed(2)}`;
+const fmtDate = (iso: string | null) =>
+  iso
+    ? new Date(iso).toLocaleString("pt-BR", {
+        day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit",
+      })
+    : "—";
 
-function sigOf(s: string) {
-  return SIG[s] ?? { cor: "#5c6159", label: s };
-}
+/* ícones estilo TikTok (SVG inline) */
+const IconHeart = () => (
+  <svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor" aria-hidden>
+    <path d="M12 21s-7.6-4.7-10-9.4C.4 8.3 2.1 5 5.6 5c2 0 3.3 1.1 4.4 2.6C11.1 6.1 12.4 5 14.4 5 17.9 5 19.6 8.3 22 11.6 19.6 16.3 12 21 12 21z" />
+  </svg>
+);
+const IconComment = () => (
+  <svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor" aria-hidden>
+    <path d="M12 3C6.5 3 2 6.6 2 11c0 2.5 1.4 4.8 3.7 6.2-.2 1.2-.8 2.6-1.8 3.7 1.9-.2 3.7-1 5.1-2.1.9.2 1.9.2 3 .2 5.5 0 10-3.6 10-8S17.5 3 12 3z" />
+  </svg>
+);
+const IconEye = () => (
+  <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" aria-hidden>
+    <path d="M12 5C6 5 2 12 2 12s4 7 10 7 10-7 10-7-4-7-10-7zm0 11.5A4.5 4.5 0 1112 7a4.5 4.5 0 010 9.5zM12 14a2 2 0 100-4 2 2 0 000 4z" />
+  </svg>
+);
 
 function Row({ p, i }: { p: Produto; i: number }) {
   const [open, setOpen] = useState(false);
   const [imgOk, setImgOk] = useState(true);
-  const sig = sigOf(p.sinal);
   const comments = open ? p.comentarios_intencao : p.comentarios_intencao.slice(0, 2);
   return (
-    <article
-      className="row"
-      style={{ ["--sig" as string]: sig.cor, animationDelay: `${i * 45}ms` }}
-    >
+    <article className="row" style={{ animationDelay: `${i * 40}ms` }}>
       <div className="rank">
         <span className="hash">#</span>
         {String(i + 1).padStart(2, "0")}
@@ -58,8 +65,6 @@ function Row({ p, i }: { p: Produto; i: number }) {
       <div className="main">
         <div className="title">{p.produto}</div>
         <div className="badges">
-          <span className="badge sig">{sig.label}</span>
-          <span className="badge mkt">{MERCADO[p.mercado] ?? p.mercado}</span>
           {p.nicho && <span className="badge mkt">{p.nicho}</span>}
           {p.preco && (
             <span className="badge price">
@@ -98,11 +103,14 @@ function Row({ p, i }: { p: Produto; i: number }) {
           </div>
         </div>
         <div className="eng">
-          <span>
-            ♥ <b>{brl(p.engajamento.curtidas)}</b>
+          <span title="views">
+            <IconEye /> <b>{compact(p.engajamento.views)}</b>
           </span>
-          <span>
-            ✎ <b>{brl(p.engajamento.comentarios)}</b>
+          <span title="curtidas">
+            <IconHeart /> <b>{compact(p.engajamento.curtidas)}</b>
+          </span>
+          <span title="comentários">
+            <IconComment /> <b>{compact(p.engajamento.comentarios)}</b>
           </span>
         </div>
         <a className="linkout" href={p.url} target="_blank" rel="noreferrer">
@@ -114,9 +122,10 @@ function Row({ p, i }: { p: Produto; i: number }) {
 }
 
 export default function Dashboard() {
-  const [f, setF] = useState<Filtros>({ limit: 50, min_score: 0 });
+  const [f, setF] = useState<Filtros>({ limit: 60, run: "latest" });
   const [data, setData] = useState<ProdutosResp | null>(null);
   const [custo, setCusto] = useState<CustoResp | null>(null);
+  const [varreduras, setVarreduras] = useState<Varredura[]>([]);
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [dry, setDry] = useState(false);
@@ -127,9 +136,14 @@ export default function Dashboard() {
     setLoading(true);
     setErr(null);
     try {
-      const [pr, cu] = await Promise.all([getProdutos(f), getCusto().catch(() => null)]);
+      const [pr, cu, vs] = await Promise.all([
+        getProdutos(f),
+        getCusto().catch(() => null),
+        getVarreduras().catch(() => [] as Varredura[]),
+      ]);
       setData(pr);
       if (cu) setCusto(cu);
+      setVarreduras(vs);
     } catch (e) {
       setErr(e instanceof Error ? e.message : "falha ao carregar");
     } finally {
@@ -141,7 +155,6 @@ export default function Dashboard() {
     load();
   }, [load]);
 
-  // acompanha um run até terminar; ao concluir, recarrega a lista
   const pollRun = useCallback(
     async (id: number) => {
       setSweeping(true);
@@ -154,10 +167,8 @@ export default function Dashboard() {
             setSweeping(false);
             if (run.status === "done") {
               const s = run.summary;
-              setSweepMsg(
-                `✓ ${s?.sobreviventes ?? 0} produtos · ${s?.creditos_gastos ?? "?"} créditos`,
-              );
-              await load();
+              setSweepMsg(`✓ ${s?.sobreviventes ?? 0} produtos · ${s?.creditos_gastos ?? "?"} créditos`);
+              setF((v) => ({ ...v, run: String(id) })); // pula pra varredura nova
             } else if (run.status === "error") {
               setSweepMsg(`✗ erro: ${run.error ?? "desconhecido"}`);
             } else {
@@ -174,10 +185,9 @@ export default function Dashboard() {
       }
       setSweeping(false);
     },
-    [load],
+    [],
   );
 
-  // retoma o polling se já houver uma varredura rodando ao abrir
   useEffect(() => {
     getLatestRun()
       .then((s) => {
@@ -189,10 +199,10 @@ export default function Dashboard() {
   const runSweep = useCallback(async () => {
     if (sweeping) return;
     setSweepMsg(null);
-    let token = typeof window !== "undefined" ? localStorage.getItem("lowspy_token") ?? undefined : undefined;
-    const fire = async (t?: string) => triggerSweep(dry, t);
+    const token =
+      typeof window !== "undefined" ? localStorage.getItem("lowspy_token") ?? undefined : undefined;
     try {
-      const { run_id } = await fire(token);
+      const { run_id } = await triggerSweep(dry, token);
       pollRun(run_id);
     } catch (e) {
       if (e instanceof TriggerError && e.code === 401) {
@@ -200,7 +210,7 @@ export default function Dashboard() {
         if (!t) return setSweepMsg("disparo cancelado (sem token)");
         localStorage.setItem("lowspy_token", t);
         try {
-          const { run_id } = await fire(t);
+          const { run_id } = await triggerSweep(dry, t);
           pollRun(run_id);
         } catch {
           setSweepMsg("token rejeitado");
@@ -227,7 +237,7 @@ export default function Dashboard() {
           <span className="kicker">radar de demanda</span>
         </div>
         <p className="tagline">
-          Produtos <b>low-ticket</b> com demanda real, minerados do TikTok orgânico —
+          Infoprodutos <b>low-ticket</b> com demanda real, minerados do TikTok orgânico —
           rankeados pelo sinal que prova a saída.
         </p>
       </header>
@@ -265,60 +275,59 @@ export default function Dashboard() {
         {sweepMsg && <span className="runmsg">{sweepMsg}</span>}
       </section>
 
+      {/* seletor de varredura */}
+      <section className="runbar">
+        <label>varredura</label>
+        <select value={f.run ?? "latest"} onChange={(e) => set({ run: e.target.value })}>
+          <option value="latest">última busca</option>
+          {varreduras
+            .filter((v) => v.n_produtos > 0)
+            .map((v) => (
+              <option key={v.id} value={String(v.id)}>
+                {fmtDate(v.finished_at)} · {v.n_produtos} produtos
+              </option>
+            ))}
+          <option value="all">todas (acumulado)</option>
+        </select>
+        <span className="runcount">
+          {loading ? "carregando…" : <><b>{data?.total ?? 0}</b> produtos</>}
+        </span>
+      </section>
+
+      {/* filtros de engajamento */}
       <section className="filters">
         <div className="grp">
-          <label>mercado</label>
-          <select value={f.mercado ?? ""} onChange={(e) => set({ mercado: e.target.value || undefined })}>
-            <option value="">todos</option>
-            <option value="fisico_revenda">físico · revenda</option>
-            <option value="digital_info">digital · info</option>
-            <option value="criativo">criativo</option>
-            <option value="nicho">nicho</option>
-          </select>
+          <label>views mín.</label>
+          <input type="number" min={0} placeholder="—" value={f.min_views ?? ""}
+            onChange={(e) => set({ min_views: e.target.value ? Number(e.target.value) : undefined })} />
         </div>
         <div className="grp">
-          <label>sinal</label>
-          <select value={f.sinal ?? ""} onChange={(e) => set({ sinal: e.target.value || undefined })}>
-            <option value="">todos</option>
-            <option value="demanda_confirmada">demanda confirmada</option>
-            <option value="vendedor_off_platform">vendedor off-platform</option>
-          </select>
+          <label>curtidas mín.</label>
+          <input type="number" min={0} placeholder="—" value={f.min_likes ?? ""}
+            onChange={(e) => set({ min_likes: e.target.value ? Number(e.target.value) : undefined })} />
         </div>
         <div className="grp">
-          <label>score mín.</label>
-          <input
-            type="number"
-            min={0}
-            max={100}
-            value={f.min_score ?? 0}
-            onChange={(e) => set({ min_score: Number(e.target.value) })}
-          />
+          <label>comentários mín.</label>
+          <input type="number" min={0} placeholder="—" value={f.min_comments ?? ""}
+            onChange={(e) => set({ min_comments: e.target.value ? Number(e.target.value) : undefined })} />
         </div>
         <div className="grp">
           <label>preço máx (R$)</label>
-          <input
-            type="number"
-            min={0}
-            placeholder="—"
-            value={f.preco_max ?? ""}
-            onChange={(e) => set({ preco_max: e.target.value ? Number(e.target.value) : undefined })}
-          />
-        </div>
-        <div className="spacer" />
-        <div className="count">
-          {loading ? "minerando…" : <><b>{data?.total ?? 0}</b> produtos</>}
+          <input type="number" min={0} placeholder="—" value={f.preco_max ?? ""}
+            onChange={(e) => set({ preco_max: e.target.value ? Number(e.target.value) : undefined })} />
         </div>
       </section>
 
       {err ? (
         <div className="state err">
-          erro: {err} · confira se a API está no ar em <b>{process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}</b>
+          erro: {err} · confira se a API está no ar em{" "}
+          <b>{process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}</b>
         </div>
       ) : loading && !data ? (
         <div className="state">carregando o radar…</div>
       ) : data && data.produtos.length === 0 ? (
         <div className="state">
-          nenhum produto bateu os filtros. rode uma varredura: <b>python -m app.pipeline --live</b>
+          nenhum produto nessa busca. clique em <b>◆ rodar varredura</b> pra minerar.
         </div>
       ) : (
         <div className="list">
