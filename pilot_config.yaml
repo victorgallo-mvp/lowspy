@@ -111,7 +111,7 @@ discovery:
   mode: "hashtag"
   # Metodologia do operador: minera FORMATO + PRECIFICAÇÃO, não nicho. Cada hashtag
   # vira uma chamada /search/hashtag. Mercados ligáveis/desligáveis.
-  enabled_markets: ["formato_digital", "formato_criativo", "fisico_revenda"]
+  enabled_markets: ["formato_digital", "formato_criativo"]  # SÓ digital (físico desligado)
   markets:
     # Formato de Entrega (digital) — acha o vendedor de PDF/apostila/molde direto
     formato_digital:
@@ -156,6 +156,7 @@ thresholds:
   abs_min_likes: 10
   relative_top_frac: 0.75  # mantém os 75% mais comentados de cada hashtag
   intent_threshold: 2.0    # Nível 1: score mínimo pra sobreviver (afrouxado p/ + resultados)
+  recency_days: 21         # só posts recentes (mata viral "evergreen" que ressurge toda busca)
 
 # --- Pesos do score de intenção (peso, não match cru) -----------------------
 weights:

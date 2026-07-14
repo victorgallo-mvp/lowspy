@@ -22,6 +22,7 @@ from .signals import (
     classify_signal,
     extract_price,
     intent_score,
+    is_fisico,
     is_ptbr,
     normalize_score,
     select_level0_relative,
@@ -126,10 +127,16 @@ def run_sweep(session, cfg: dict, live: bool,
         select(Keyword).where(Keyword.ativo == True)  # noqa: E712
     ).scalars().all()[:max_hashtags]
 
+    import time
+
     total_seen = 0
     lang_dropped = 0
+    fisico_dropped = 0
+    velho_dropped = 0
     n0_by_id: dict[str, Any] = {}  # dedup por id (mesmo post surge em várias hashtags)
     thr = cfg["thresholds"]["intent_threshold"]
+    recency_days = cfg["thresholds"].get("recency_days")
+    now = time.time()
 
     try:
         for kw in keywords:
@@ -151,6 +158,14 @@ def run_sweep(session, cfg: dict, live: bool,
             for it in select_level0_relative(items, cfg):
                 if not it.id or it.id in n0_by_id:
                     continue  # mantém a 1ª ocorrência (mercado que surfou primeiro)
+                if is_fisico(it.desc):  # backstop anti-físico (só digital)
+                    fisico_dropped += 1
+                    continue
+                if recency_days:  # recência: mata viral evergreen que ressurge
+                    ct = it.ct_int()
+                    if ct and (now - float(ct)) > recency_days * 86400:
+                        velho_dropped += 1
+                        continue
                 it.market = kw.mercado
                 it.sinal_esperado = kw.sinal_esperado
                 n0_by_id[it.id] = it
@@ -239,6 +254,8 @@ def run_sweep(session, cfg: dict, live: bool,
         "modo": "live" if live else "dry-run",
         "total_buscado": total_seen,
         "idioma_dropados": lang_dropped,
+        "fisico_dropados": fisico_dropped,
+        "velhos_dropados": velho_dropped,
         "n0_posts": sum(len(v) for v in by_market.values()),
         "comment_fetches": comment_fetches,
         "sobreviventes": survivors,

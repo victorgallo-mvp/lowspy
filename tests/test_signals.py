@@ -5,6 +5,7 @@ from app.signals import (
     classify_signal,
     extract_price,
     intent_score,
+    is_fisico,
     is_ptbr,
     normalize_score,
     select_level0_relative,
@@ -62,6 +63,13 @@ def test_select_level0_relative_preserves_niche():
     assert len(kept) >= 1
     # o de 3 comentários (abaixo do piso abs_min_comments=5) é dropado
     assert all(it.statistics.comment_count >= CFG["thresholds"]["abs_min_comments"] for it in kept)
+
+
+def test_is_fisico_dropa_envio():
+    assert is_fisico("frete grátis, enviamos pelos Correios") is True
+    assert is_fisico("compre na Shopee, pronta entrega") is True
+    assert is_fisico("apostila em PDF, acesso imediato no link") is False
+    assert is_fisico("editáveis no Canva, link na bio") is False
 
 
 def test_normalize_score_bounded():

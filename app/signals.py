@@ -28,6 +28,18 @@ _NONPT_HINTS = re.compile(
 )
 
 
+_FISICO = re.compile(
+    r"\b(frete|correios|sedex|shopee|encomenda|enviamos|envio em|entrega em \d|"
+    r"pronta entrega|sacolinha|em estoque|pedido m[íi]nimo|rastreio|transportadora)\b",
+    re.IGNORECASE,
+)
+
+
+def is_fisico(text: str) -> bool:
+    """Backstop anti-físico: marcadores de envio/estoque na legenda (só digital)."""
+    return bool(_FISICO.search(text or ""))
+
+
 def is_ptbr(text: str) -> bool:
     t = text or ""
     pt = len(_PT_HINTS.findall(t))

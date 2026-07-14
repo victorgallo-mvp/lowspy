@@ -90,13 +90,21 @@ class DryRunClient:
         self._credits -= 1
         self.on_call(endpoint, self._credits, params)
 
+    def _items(self) -> list[SearchItem]:
+        import time
+        now = int(time.time())
+        items = [SearchItem.model_validate(it) for it in self._top.get("items", [])]
+        for si in items:  # fixture "recente" p/ passar no filtro de recência
+            si.create_time = now
+        return items
+
     def search_hashtag(self, hashtag: str) -> list[SearchItem]:
         self._spend("search_hashtag", {"hashtag": hashtag})
-        return [SearchItem.model_validate(it) for it in self._top.get("items", [])]
+        return self._items()
 
     def search_top(self, query: str, cfg: dict) -> list[SearchItem]:
         self._spend("search_top", {"query": query})
-        return [SearchItem.model_validate(it) for it in self._top.get("items", [])]
+        return self._items()
 
     def video_comments(self, url: str) -> list[CommentSchema]:
         self._spend("video_comments", {"url": url})
