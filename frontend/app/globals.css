@@ -136,6 +136,11 @@ body::after {
 .runbar select:focus { border-color: var(--green); }
 .runcount { font-family: var(--font-mono), monospace; font-size: 12px; color: var(--ink-dim); }
 .runcount b { color: var(--green-deep); }
+.onlynew {
+  display: inline-flex; align-items: center; gap: 7px; cursor: pointer; user-select: none;
+  font-family: var(--font-mono), monospace; font-size: 11.5px; color: var(--ink-dim);
+}
+.onlynew input { accent-color: var(--green); width: 15px; height: 15px; cursor: pointer; }
 
 /* ---------------- filters ---------------- */
 .filters {
@@ -204,6 +209,7 @@ body::after {
 .badge.mkt { background: var(--panel); }
 .badge.price { color: var(--ink); }
 .badge.price b { color: var(--green-deep); }
+.badge.novo { background: var(--green); color: #06210f; border-color: var(--green-deep); font-weight: 700; letter-spacing: 0.1em; }
 
 .proof { display: flex; flex-direction: column; gap: 5px; margin-top: 2px; }
 .proof .plabel {

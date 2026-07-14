@@ -23,7 +23,12 @@ def _ensure_columns() -> None:
 
     insp = inspect(engine)
     tables = insp.get_table_names()
-    checks = [("posts", "cover_url", "TEXT"), ("produtos", "run_id", "INTEGER")]
+    checks = [
+        ("posts", "cover_url", "TEXT"),
+        ("produtos", "run_id", "INTEGER"),
+        ("produtos", "novo", "BOOLEAN"),
+        ("scores", "engaj_score", "REAL"),
+    ]
     for table, col, coltype in checks:
         if table in tables:
             existing = {c["name"] for c in insp.get_columns(table)}

@@ -137,6 +137,42 @@ def classify_signal(intent: dict, cap: dict, cfg: dict) -> str:
 
 
 def normalize_score(combined: float, cfg: dict) -> float:
-    """Normaliza 0-100 (auditável). Teto configurável evita saturar em outliers."""
+    """Normaliza a DEMANDA 0-100 (auditável). Teto configurável evita saturar."""
     cap = cfg["thresholds"].get("score_norm_cap", 20.0)
     return round(min(100.0, 100.0 * combined / cap), 2)
+
+
+def engagement_norm(views: int, likes: int, comments: int, cfg: dict) -> float:
+    """Engajamento 0-100 em escala LOG (views vão de mil a milhões — sem log, um
+    viral de 10M esmaga todo mundo). Pesos e referências no config."""
+    s = cfg.get("score", {})
+    pesos = s.get("pesos_engaj", {"views": 0.4, "likes": 0.3, "comentarios": 0.3})
+    ref = s.get("ref_engaj", {"views": 1_000_000, "likes": 100_000, "comentarios": 5_000})
+
+    def n(v, r):
+        return min(1.0, math.log10(1 + max(0, v)) / math.log10(1 + max(1, r)))
+
+    tot = (pesos["views"] + pesos["likes"] + pesos["comentarios"]) or 1
+    combined = (
+        pesos["views"] * n(views, ref["views"])
+        + pesos["likes"] * n(likes, ref["likes"])
+        + pesos["comentarios"] * n(comments, ref["comentarios"])
+    )
+    return round(100.0 * combined / tot, 2)
+
+
+def final_score(demanda_norm: float, views: int, likes: int, comments: int,
+                cfg: dict) -> "tuple[float, float]":
+    """Combina DEMANDA (dominante) + engajamento. Retorna (score_final, engaj_norm)."""
+    s = cfg.get("score", {})
+    wd = s.get("peso_demanda", 0.7)
+    we = s.get("peso_engajamento", 0.3)
+    eng = engagement_norm(views, likes, comments, cfg)
+    tot = (wd + we) or 1
+    return round((wd * demanda_norm + we * eng) / tot, 2), eng
+
+
+def is_high_ticket(text: str, cfg: dict) -> bool:
+    """Dropa high-ticket (queremos low-ticket): mentoria/imersão/curso completo…"""
+    low = (text or "").lower()
+    return any(m.lower() in low for m in cfg.get("high_ticket", []))

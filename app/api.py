@@ -56,6 +56,7 @@ def _serialize(pr: Produto, post: Post, sc: Score) -> dict:
         "post_id": post.id,
         "mercado": pr.mercado,
         "sinal": pr.sinal,
+        "novo": bool(pr.novo),
         "score": pr.score_final,
         "produto": pr.produto or post.descricao[:120],
         "preco": pr.preco,
@@ -70,6 +71,7 @@ def _serialize(pr: Produto, post: Post, sc: Score) -> dict:
         "score_componentes": {
             "comment_score": sc.comment_score,
             "caption_score": sc.caption_score,
+            "engaj_score": sc.engaj_score,
             "n_comentarios_intencao": sc.n_comentarios_intencao,
             "densidade_intencao": sc.densidade_intencao,
         },
@@ -97,6 +99,7 @@ def listar_produtos(
     min_comments: int = Query(0, ge=0),
     preco_max: Optional[float] = None,
     run: str = Query("latest", description="latest | all | <run_id>"),
+    only_new: bool = Query(False, description="só produtos novos (não vistos antes)"),
 ):
     q = (
         select(Produto, Post, Score)
@@ -104,6 +107,8 @@ def listar_produtos(
         .join(Score, Score.post_id == Post.id)
         .where(Produto.score_final >= min_score)
     )
+    if only_new:
+        q = q.where(Produto.novo == True)  # noqa: E712
     # filtros de engajamento (a régua é do operador)
     if min_views:
         q = q.where(Post.play_count >= min_views)

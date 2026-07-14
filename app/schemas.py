@@ -26,6 +26,7 @@ class SearchItem(BaseModel):
     cover_url: str = ""
     market: str = ""
     sinal_esperado: str = ""
+    novo: bool = False  # transiente: 1ª vez visto (não estava no DB antes deste run)
 
     @property
     def author_id(self) -> str:

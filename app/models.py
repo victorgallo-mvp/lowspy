@@ -93,6 +93,7 @@ class Score(Base):
     densidade_intencao = Column(Float, default=0.0)
     caption_score = Column(Float, default=0.0)
     comment_score = Column(Float, default=0.0)
+    engaj_score = Column(Float, default=0.0)  # engajamento normalizado (Bloco 3)
     score_final = Column(Float, default=0.0)  # normalizado 0-100
     sinal = Column(String(32), default="")  # demanda_confirmada | vendedor_off_platform
     created_at = Column(DateTime, server_default=func.now())
@@ -115,6 +116,7 @@ class Produto(Base):
     mercado = Column(String(60), default="")
     sinal = Column(String(32), default="")
     score_final = Column(Float, default=0.0)
+    novo = Column(Boolean, default=False)  # 1ª vez que aparece (não visto em run anterior)
     created_at = Column(DateTime, server_default=func.now())
 
 

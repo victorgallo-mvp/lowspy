@@ -65,6 +65,7 @@ function Row({ p, i }: { p: Produto; i: number }) {
       <div className="main">
         <div className="title">{p.produto}</div>
         <div className="badges">
+          {p.novo && <span className="badge novo">novo</span>}
           {p.nicho && <span className="badge mkt">{p.nicho}</span>}
           {p.preco && (
             <span className="badge price">
@@ -122,7 +123,7 @@ function Row({ p, i }: { p: Produto; i: number }) {
 }
 
 export default function Dashboard() {
-  const [f, setF] = useState<Filtros>({ limit: 60, run: "latest" });
+  const [f, setF] = useState<Filtros>({ limit: 60, run: "latest", only_new: true });
   const [data, setData] = useState<ProdutosResp | null>(null);
   const [custo, setCusto] = useState<CustoResp | null>(null);
   const [varreduras, setVarreduras] = useState<Varredura[]>([]);
@@ -289,6 +290,14 @@ export default function Dashboard() {
             ))}
           <option value="all">todas (acumulado)</option>
         </select>
+        <label className="onlynew">
+          <input
+            type="checkbox"
+            checked={f.only_new ?? false}
+            onChange={(e) => set({ only_new: e.target.checked })}
+          />
+          só novos
+        </label>
         <span className="runcount">
           {loading ? "carregando…" : <><b>{data?.total ?? 0}</b> produtos</>}
         </span>

@@ -21,8 +21,10 @@ from .signals import (
     caption_seller_score,
     classify_signal,
     extract_price,
+    final_score,
     intent_score,
     is_fisico,
+    is_high_ticket,
     is_ptbr,
     normalize_score,
     select_level0_relative,
@@ -74,8 +76,8 @@ def upsert_post(session, item, market: str) -> Post:
     return post
 
 
-def upsert_score(session, post_id: str, intent: dict, cap: dict, combined: float,
-                 sinal: str) -> None:
+def upsert_score(session, post_id: str, intent: dict, cap: dict, score_final: float,
+                 sinal: str, engaj: float = 0.0) -> None:
     sc = session.execute(select(Score).where(Score.post_id == post_id)).scalar_one_or_none()
     if sc is None:
         sc = Score(post_id=post_id)
@@ -85,12 +87,13 @@ def upsert_score(session, post_id: str, intent: dict, cap: dict, combined: float
     sc.densidade_intencao = intent["densidade_intencao"]
     sc.caption_score = cap["score"]
     sc.comment_score = intent["score"]
-    sc.score_final = combined
+    sc.engaj_score = engaj
+    sc.score_final = score_final
     sc.sinal = sinal
 
 
 def upsert_produto(session, post, combined: float, sinal: str, preco,
-                   run_id=None) -> None:
+                   run_id=None, novo=False) -> None:
     pr = session.execute(select(Produto).where(Produto.post_id == post.id)).scalar_one_or_none()
     if pr is None:
         pr = Produto(post_id=post.id)
@@ -99,6 +102,7 @@ def upsert_produto(session, post, combined: float, sinal: str, preco,
     pr.sinal = sinal
     pr.score_final = combined
     pr.run_id = run_id  # re-achado numa nova varredura → migra pro run atual
+    pr.novo = novo
     if preco:
         pr.preco = preco
 
@@ -133,42 +137,53 @@ def run_sweep(session, cfg: dict, live: bool,
     lang_dropped = 0
     fisico_dropped = 0
     velho_dropped = 0
+    highticket_dropped = 0
     n0_by_id: dict[str, Any] = {}  # dedup por id (mesmo post surge em várias hashtags)
     thr = cfg["thresholds"]["intent_threshold"]
     recency_days = cfg["thresholds"].get("recency_days")
+    max_pages = cfg["caps"].get("max_pages_per_hashtag", 1)
     now = time.time()
+    # snapshot dos posts que JÁ existem no DB → novidade (visto em run anterior?)
+    existing_ids = {r[0] for r in session.execute(select(Post.id)).all()}
 
     try:
         for kw in keywords:
             LOG.info("Busca %s | %s/%s | %r", kw.tipo, kw.mercado, kw.sinal_esperado, kw.termo)
-            try:
-                items = (
-                    client.search_hashtag(kw.termo)
-                    if kw.tipo == "hashtag"
-                    else client.search_top(kw.termo, cfg)
-                )
-            except Exception as e:  # falha de coleta não derruba o pipeline
-                LOG.error("Busca falhou para %r: %s", kw.termo, e)
-                continue
-            total_seen += len(items)
-            if require_pt:
-                kept = [it for it in items if is_ptbr(it.desc)]
-                lang_dropped += len(items) - len(kept)
-                items = kept
-            for it in select_level0_relative(items, cfg):
-                if not it.id or it.id in n0_by_id:
-                    continue  # mantém a 1ª ocorrência (mercado que surfou primeiro)
-                if is_fisico(it.desc):  # backstop anti-físico (só digital)
-                    fisico_dropped += 1
-                    continue
-                if recency_days:  # recência: mata viral evergreen que ressurge
-                    ct = it.ct_int()
-                    if ct and (now - float(ct)) > recency_days * 86400:
-                        velho_dropped += 1
+            cursor = None
+            for _page in range(max_pages):
+                try:
+                    if kw.tipo == "hashtag":
+                        items, cursor = client.search_hashtag(kw.termo, cursor)
+                    else:
+                        items, cursor = client.search_top(kw.termo, cfg), None
+                except Exception as e:  # falha de coleta não derruba o pipeline
+                    LOG.error("Busca falhou para %r: %s", kw.termo, e)
+                    break
+                total_seen += len(items)
+                if require_pt:
+                    kept = [it for it in items if is_ptbr(it.desc)]
+                    lang_dropped += len(items) - len(kept)
+                    items = kept
+                for it in select_level0_relative(items, cfg):
+                    if not it.id or it.id in n0_by_id:
+                        continue  # mantém a 1ª ocorrência
+                    if is_fisico(it.desc):  # backstop anti-físico (só digital)
+                        fisico_dropped += 1
                         continue
-                it.market = kw.mercado
-                it.sinal_esperado = kw.sinal_esperado
-                n0_by_id[it.id] = it
+                    if is_high_ticket(it.desc, cfg):  # queremos low-ticket
+                        highticket_dropped += 1
+                        continue
+                    if recency_days:  # recência: mata viral evergreen que ressurge
+                        ct = it.ct_int()
+                        if ct and (now - float(ct)) > recency_days * 86400:
+                            velho_dropped += 1
+                            continue
+                    it.market = kw.mercado
+                    it.sinal_esperado = kw.sinal_esperado
+                    it.novo = it.id not in existing_ids  # NOVIDADE
+                    n0_by_id[it.id] = it
+                if kw.tipo != "hashtag" or not cursor:
+                    break  # top não pagina; hashtag sem cursor acabou
 
         # Upsert dos posts únicos (1 por id) — idempotente
         for it in n0_by_id.values():
@@ -186,10 +201,10 @@ def run_sweep(session, cfg: dict, live: bool,
             author_count[it.author_id] += 1
             by_market.setdefault(it.market, []).append(it)
 
-        # N0.5 (grátis): prioriza por sinal-de-legenda; cota por mercado
+        # N0.5 (grátis): NOVO primeiro, depois sinal-de-legenda; cota por mercado
         for mkt in by_market:
             by_market[mkt].sort(
-                key=lambda x: (caption_seller_score(x.desc, cfg)["score"],
+                key=lambda x: (x.novo, caption_seller_score(x.desc, cfg)["score"],
                                x.statistics.comment_count),
                 reverse=True,
             )
@@ -198,6 +213,7 @@ def run_sweep(session, cfg: dict, live: bool,
 
         comment_fetches = 0
         survivors = 0
+        novos = 0
         for mkt, items in by_market.items():
             for it in items[:quota]:
                 if comment_fetches >= max_fetches:
@@ -232,16 +248,24 @@ def run_sweep(session, cfg: dict, live: bool,
                         cm.create_time = None
                     cm.is_intent = c.text in intent_set
 
-                norm = normalize_score(combined, cfg)
-                upsert_score(session, it.id, intent, cap, norm, sinal)
+                # Bloco 3: demanda (dominante) + engajamento log-ponderado
+                demanda_norm = normalize_score(combined, cfg)
+                score_val, engaj = final_score(
+                    demanda_norm, it.statistics.play_count,
+                    it.statistics.digg_count, it.statistics.comment_count, cfg,
+                )
+                upsert_score(session, it.id, intent, cap, score_val, sinal, engaj)
                 post = session.get(Post, it.id)
                 post.processed_at = datetime.now(timezone.utc)
                 if combined >= thr and sinal != "sem_sinal":
-                    upsert_produto(session, post, norm, sinal,
-                                   extract_price(it.desc, *texts), run_id)
+                    upsert_produto(session, post, score_val, sinal,
+                                   extract_price(it.desc, *texts), run_id, novo=it.novo)
                     survivors += 1
-                LOG.info("  N1 [%s] %s tot=%.1f norm=%.1f | %s",
-                         mkt, sinal, combined, norm, it.desc[:45])
+                    if it.novo:
+                        novos += 1
+                LOG.info("  N1 [%s] %s%s score=%.1f (dem=%.0f eng=%.0f) | %s",
+                         mkt, sinal, " NOVO" if it.novo else "", score_val,
+                         demanda_norm, engaj, it.desc[:42])
         session.commit()
     finally:
         client.close()
@@ -255,9 +279,11 @@ def run_sweep(session, cfg: dict, live: bool,
         "total_buscado": total_seen,
         "idioma_dropados": lang_dropped,
         "fisico_dropados": fisico_dropped,
+        "highticket_dropados": highticket_dropped,
         "velhos_dropados": velho_dropped,
         "n0_posts": sum(len(v) for v in by_market.values()),
         "comment_fetches": comment_fetches,
+        "novos": novos,
         "sobreviventes": survivors,
         "breadth": breadth,
         "creditos_gastos": cost.total_credits(),

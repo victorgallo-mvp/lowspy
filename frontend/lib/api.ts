@@ -12,6 +12,7 @@ export type Produto = {
   post_id: string;
   mercado: string;
   sinal: string;
+  novo: boolean;
   score: number;
   produto: string;
   preco: string | null;
@@ -47,6 +48,7 @@ export type Filtros = {
   preco_max?: number;
   limit?: number;
   run?: string; // latest | all | <id>
+  only_new?: boolean;
 };
 
 export type Varredura = {
@@ -64,6 +66,7 @@ export async function getProdutos(f: Filtros): Promise<ProdutosResp> {
   if (f.min_likes) q.set("min_likes", String(f.min_likes));
   if (f.min_comments) q.set("min_comments", String(f.min_comments));
   if (f.preco_max) q.set("preco_max", String(f.preco_max));
+  if (f.only_new) q.set("only_new", "true");
   q.set("run", f.run ?? "latest");
   q.set("limit", String(f.limit ?? 60));
   const r = await fetch(`${API_BASE}/produtos?${q.toString()}`, { cache: "no-store" });

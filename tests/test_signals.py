@@ -3,9 +3,12 @@ from app.schemas import SearchItem, SearchStats
 from app.signals import (
     caption_seller_score,
     classify_signal,
+    engagement_norm,
     extract_price,
+    final_score,
     intent_score,
     is_fisico,
+    is_high_ticket,
     is_ptbr,
     normalize_score,
     select_level0_relative,
@@ -70,6 +73,21 @@ def test_is_fisico_dropa_envio():
     assert is_fisico("compre na Shopee, pronta entrega") is True
     assert is_fisico("apostila em PDF, acesso imediato no link") is False
     assert is_fisico("editáveis no Canva, link na bio") is False
+
+
+def test_is_high_ticket():
+    assert is_high_ticket("Mentoria completa de tráfego pago", CFG) is True
+    assert is_high_ticket("12x de R$97 na formação", CFG) is True
+    assert is_high_ticket("apostila em PDF por 10 reais", CFG) is False
+
+
+def test_engagement_e_final_score():
+    alto = engagement_norm(1_000_000, 100_000, 5_000, CFG)
+    baixo = engagement_norm(500, 50, 5, CFG)
+    assert 0 <= baixo < alto <= 100  # log: mais engajamento → maior, sem estourar
+    # demanda domina: mesmo com engajamento baixo, demanda alta puxa o final
+    f, eng = final_score(80.0, 500, 100, 20, CFG)
+    assert 0 <= f <= 100 and f > eng
 
 
 def test_normalize_score_bounded():

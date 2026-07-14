@@ -158,6 +158,28 @@ thresholds:
   intent_threshold: 2.0    # Nível 1: score mínimo pra sobreviver (afrouxado p/ + resultados)
   recency_days: 21         # só posts recentes (mata viral "evergreen" que ressurge toda busca)
 
+# --- Score final: demanda dominante + engajamento ponderado (Bloco 3) -------
+score:
+  peso_demanda: 0.7        # demanda (intenção+CTA) domina — não virar ranking de viral
+  peso_engajamento: 0.3
+  pesos_engaj: {views: 0.4, likes: 0.3, comentarios: 0.3}
+  # referência p/ normalizar em escala log (o que conta como "alto")
+  ref_engaj: {views: 1000000, likes: 100000, comentarios: 5000}
+
+# --- High-ticket a dropar (queremos LOW-ticket) — Bloco 4 -------------------
+high_ticket:
+  - "mentoria"
+  - "imersão"
+  - "imersao"
+  - "formação"
+  - "formacao"
+  - "consultoria"
+  - "acompanhamento"
+  - "curso completo"
+  - "turma de"
+  - "12x de"
+  - "parcelad"
+
 # --- Pesos do score de intenção (peso, não match cru) -----------------------
 weights:
   intencao: 1.0
@@ -174,6 +196,7 @@ caps:
   max_hashtags: 15           # teto de chamadas /search/hashtag no run
   max_comment_fetches: 40    # teto rígido de fetches de comentário no run inteiro
   max_posts_per_author: 2    # dedup: até N posts do mesmo autor (variedade + volume)
+  max_pages_per_hashtag: 2   # pagina fundo p/ achar produtos NOVOS (não repetir)
 
 # --- Precificação (ajustar ao teu plano) ------------------------------------
 pricing:

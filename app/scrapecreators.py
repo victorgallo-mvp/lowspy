@@ -43,10 +43,15 @@ class LiveClient:
         r.raise_for_status()
         return r.json()
 
-    def search_hashtag(self, hashtag: str) -> list[SearchItem]:
-        data = self._get("/v1/tiktok/search/hashtag", {"hashtag": hashtag})
-        self.on_call("search_hashtag", data.get("credits_remaining"), {"hashtag": hashtag})
-        return [hashtag_to_item(a) for a in data.get("aweme_list", [])]
+    def search_hashtag(self, hashtag: str, cursor=None):
+        params: dict = {"hashtag": hashtag}
+        if cursor is not None:
+            params["cursor"] = cursor
+        data = self._get("/v1/tiktok/search/hashtag", params)
+        self.on_call("search_hashtag", data.get("credits_remaining"),
+                     {"hashtag": hashtag, "cursor": cursor})
+        items = [hashtag_to_item(a) for a in data.get("aweme_list", [])]
+        return items, data.get("cursor")  # (items, next_cursor)
 
     def search_top(self, query: str, cfg: dict) -> list[SearchItem]:
         s = cfg["search"]
@@ -98,9 +103,9 @@ class DryRunClient:
             si.create_time = now
         return items
 
-    def search_hashtag(self, hashtag: str) -> list[SearchItem]:
-        self._spend("search_hashtag", {"hashtag": hashtag})
-        return self._items()
+    def search_hashtag(self, hashtag: str, cursor=None):
+        self._spend("search_hashtag", {"hashtag": hashtag, "cursor": cursor})
+        return self._items(), None  # dry-run: página única
 
     def search_top(self, query: str, cfg: dict) -> list[SearchItem]:
         self._spend("search_top", {"query": query})
