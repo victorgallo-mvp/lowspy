@@ -39,18 +39,32 @@ def test_sweep_is_idempotent(session):
 
 
 def test_run_id_separa_por_varredura(session):
+    import copy
+    cfg = copy.deepcopy(CFG)
+    cfg["discovery"]["pular_vistos"] = False  # aqui testamos a migração no re-find
     _seed_keyword(session)
     r1 = Run(status="running", mode="dry-run")
     session.add(r1); session.commit()
-    run_sweep(session, CFG, live=False, run_id=r1.id)
+    run_sweep(session, cfg, live=False, run_id=r1.id)
     assert session.query(Produto).count() >= 1
     assert all(p.run_id == r1.id for p in session.query(Produto).all())
 
     # nova varredura re-acha os mesmos posts → produtos migram pro run atual
     r2 = Run(status="running", mode="dry-run")
     session.add(r2); session.commit()
-    run_sweep(session, CFG, live=False, run_id=r2.id)
+    run_sweep(session, cfg, live=False, run_id=r2.id)
     assert all(p.run_id == r2.id for p in session.query(Produto).all())
+
+
+def test_pular_vistos_novidade(session):
+    _seed_keyword(session)
+    run_sweep(session, CFG, live=False)  # 1ª: tudo novo
+    prod_1 = session.query(Produto).count()
+    assert prod_1 >= 1
+    # 2ª com pular_vistos (default): re-acha os mesmos → pula → não cria novos
+    r = run_sweep(session, CFG, live=False)
+    assert r["vistos_pulados"] >= 1
+    assert session.query(Produto).count() == prod_1  # não duplicou
 
 
 def test_ranked_products_orders_by_score(session):

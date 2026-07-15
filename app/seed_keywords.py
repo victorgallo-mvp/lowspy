@@ -13,7 +13,8 @@ from .models import Keyword
 # Mercados cujo sinal primário é o vendedor (legenda/entrega), não a demanda no
 # comentário — produto digital vende off-platform (metodologia do operador).
 _VENDEDOR_MARKETS = {
-    "formato_digital", "formato_criativo", "digital_info", "criativo", "nicho",
+    "formato_digital", "formato_criativo", "formato_es_en",
+    "digital_info", "criativo", "nicho",
 }
 
 

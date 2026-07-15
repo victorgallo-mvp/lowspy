@@ -56,6 +56,18 @@ keywords:
     - "disponibilizamos em pdf"
     - "para imprimir"
     - "baixar agora"
+    # Espanhol/Inglês
+    - "link en bio"
+    - "link in bio"
+    - "acceso inmediato"
+    - "descarga inmediata"
+    - "descargar ahora"
+    - "instant download"
+    - "digital download"
+    - "printable"
+    - "get it now"
+    - "in my profile"
+    - "en mi perfil"
 
   # Grupo 3 — Domínios de checkout (sinal mais forte de que há produto à venda).
   checkout:
@@ -104,6 +116,32 @@ intencao:
   - "como recebo"
   - "como recebo?"
   - "como faço pra comprar"
+  # Espanhol
+  - "quiero"
+  - "lo quiero"
+  - "cuánto cuesta"
+  - "cuanto cuesta"
+  - "cuánto vale"
+  - "cómo comprar"
+  - "como comprar"
+  - "cómo lo compro"
+  - "dónde comprar"
+  - "donde comprar"
+  - "el link"
+  - "pásame el link"
+  - "me lo mandas"
+  - "cómo lo recibo"
+  # Inglês
+  - "i want"
+  - "i want this"
+  - "how much"
+  - "how to buy"
+  - "where to buy"
+  - "the link"
+  - "link please"
+  - "need this"
+  - "want it"
+  - "send me the link"
 
 # --- Estratégia de descoberta -----------------------------------------------
 # mode: "hashtag" (recomendado — acha vendedor de nicho) ou "top" (busca por query)
@@ -111,9 +149,10 @@ discovery:
   mode: "hashtag"
   # Metodologia do operador: minera FORMATO + PRECIFICAÇÃO, não nicho. Cada hashtag
   # vira uma chamada /search/hashtag. Mercados ligáveis/desligáveis.
-  enabled_markets: ["formato_digital", "formato_criativo"]  # SÓ digital (físico desligado)
+  enabled_markets: ["formato_digital", "formato_criativo", "formato_es_en"]  # digital, pt+es+en
+  pular_vistos: true   # novidade na fonte: pula posts já vistos em runs anteriores
   markets:
-    # Formato de Entrega (digital) — acha o vendedor de PDF/apostila/molde direto
+    # Formato de Entrega (digital, pt) — acha o vendedor de PDF/apostila/molde direto
     formato_digital:
       - "apostila"
       - "moldes"
@@ -128,11 +167,26 @@ discovery:
       - "apostiladigital"
       - "papelariacriativa"
       - "treinonailart"
+      - "ebook"
+      - "kit"
+      - "catalogo"
+      - "vetor"
+      - "atividades"
+      - "modeloseditaveis"
+      - "mapamental"
     # Formato criativo/editável
     formato_criativo:
       - "templatecanva"
       - "presetlightroom"
       - "artesdigitais"
+    # Formato digital em espanhol/inglês (mercado global de infoproduto)
+    formato_es_en:
+      - "plantillas"
+      - "imprimibles"
+      - "digitaldownload"
+      - "canvatemplates"
+      - "printables"
+      - "plantillascanva"
     # Físico/revenda (sinal de demanda forte no comentário)
     fisico_revenda:
       - "achadinhos"
@@ -155,9 +209,9 @@ language:
 thresholds:
   abs_min_comments: 3      # piso absoluto (dropa post morto)
   abs_min_likes: 10
-  relative_top_frac: 0.75  # mantém os 75% mais comentados de cada hashtag
+  relative_top_frac: 1.0   # mantém TODOS de cada hashtag (mais oferta)
   intent_threshold: 2.0    # Nível 1: score mínimo pra sobreviver (afrouxado p/ + resultados)
-  recency_days: 90         # infoproduto é evergreen (vende por meses); ranqueia por views, não data
+  recency_days: 180        # infoproduto é evergreen; janela larga p/ mais oferta
   exigir_demanda_confirmada: true  # modo teste: só produtos com demanda confirmada no comentário
 
 # --- Score final: demanda dominante + engajamento ponderado (Bloco 3) -------
@@ -181,6 +235,15 @@ high_ticket:
   - "turma de"
   - "12x de"
   - "parcelad"
+  # Espanhol/Inglês
+  - "mentoría"
+  - "mentoria completa"
+  - "formación"
+  - "curso online completo"
+  - "mentorship"
+  - "coaching"
+  - "masterclass"
+  - "bootcamp"
 
 # --- Pesos do score de intenção (peso, não match cru) -----------------------
 weights:
@@ -195,10 +258,10 @@ weights:
 # --- Caps do run --live (escala "enxuto ~50 créditos") ----------------------
 caps:
   max_search_pages: 1        # páginas de busca por keyword
-  max_hashtags: 15           # teto de chamadas /search/hashtag no run
-  max_comment_fetches: 80    # teto de fetches de comentário (maior p/ confirmar ~30)
+  max_hashtags: 30           # teto de chamadas /search/hashtag no run (cobre pt+es+en)
+  max_comment_fetches: 100   # teto de fetches de comentário (maior p/ confirmar ~30)
   max_posts_per_author: 2    # dedup: até N posts do mesmo autor (variedade + volume)
-  max_pages_per_hashtag: 3   # pagina fundo p/ oferta (não repetir os mesmos)
+  max_pages_per_hashtag: 5   # pagina fundo p/ oferta + achar inéditos
   target_produtos: 30        # para de gastar fetch ao atingir a meta
 
 # --- Precificação (ajustar ao teu plano) ------------------------------------

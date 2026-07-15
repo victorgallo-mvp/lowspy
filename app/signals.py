@@ -30,7 +30,9 @@ _NONPT_HINTS = re.compile(
 
 _FISICO = re.compile(
     r"\b(frete|correios|sedex|shopee|encomenda|enviamos|envio em|entrega em \d|"
-    r"pronta entrega|sacolinha|em estoque|pedido m[íi]nimo|rastreio|transportadora)\b",
+    r"pronta entrega|sacolinha|em estoque|pedido m[íi]nimo|rastreio|transportadora|"
+    r"envío|envio gratis|correo|paqueter[íi]a|contra entrega|"
+    r"free shipping|shipping|ships in|tracking|in stock|out of stock)\b",
     re.IGNORECASE,
 )
 
@@ -40,14 +42,27 @@ def is_fisico(text: str) -> bool:
     return bool(_FISICO.search(text or ""))
 
 
-def is_ptbr(text: str) -> bool:
+# idioma: aceita pt/es/en (latino); dropa scripts não-latinos e línguas fora do escopo
+_NONLATIN = re.compile(
+    r"[Ѐ-ӿ؀-ۿऀ-ॿ฀-๿"
+    r"一-鿿가-힯぀-ヿ]"  # cirílico, árabe, devanágari, tailandês, CJK, hangul, kana
+)
+_LANG_FORA = re.compile(
+    r"\b(yang|bisa|murah|untuk|dengan|kalian|terbaru|banget|"  # indonésio
+    r"pour|votre|avec|gratuit|t[ée]l[ée]charg|des beaux|"       # francês
+    r"ücretsiz|indir|kostenlos|herunterladen)\b",              # turco/alemão
+    re.IGNORECASE,
+)
+
+
+def lang_allowed(text: str) -> bool:
+    """True p/ pt/es/en; False p/ script não-latino ou idioma fora do escopo."""
     t = text or ""
-    pt = len(_PT_HINTS.findall(t))
-    non = len(_NONPT_HINTS.findall(t))
-    has_pt_accents = bool(re.search(r"[ãõçáéíóúâ]", t))
-    if pt or has_pt_accents:
-        return pt + (1 if has_pt_accents else 0) >= non
-    return non == 0
+    if _NONLATIN.search(t):
+        return False
+    if _LANG_FORA.search(t):
+        return False
+    return True
 
 
 def extract_price(*texts: str):

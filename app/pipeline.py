@@ -25,7 +25,7 @@ from .signals import (
     intent_score,
     is_fisico,
     is_high_ticket,
-    is_ptbr,
+    lang_allowed,
     normalize_score,
     select_level0_relative,
 )
@@ -138,10 +138,12 @@ def run_sweep(session, cfg: dict, live: bool,
     fisico_dropped = 0
     velho_dropped = 0
     highticket_dropped = 0
+    vistos_pulados = 0
     n0_by_id: dict[str, Any] = {}  # dedup por id (mesmo post surge em várias hashtags)
     thr = cfg["thresholds"]["intent_threshold"]
     recency_days = cfg["thresholds"].get("recency_days")
     max_pages = cfg["caps"].get("max_pages_per_hashtag", 1)
+    pular_vistos = cfg.get("discovery", {}).get("pular_vistos", False)
     now = time.time()
     # snapshot dos posts que JÁ existem no DB → novidade (visto em run anterior?)
     existing_ids = {r[0] for r in session.execute(select(Post.id)).all()}
@@ -161,7 +163,7 @@ def run_sweep(session, cfg: dict, live: bool,
                     break
                 total_seen += len(items)
                 if require_pt:
-                    kept = [it for it in items if is_ptbr(it.desc)]
+                    kept = [it for it in items if lang_allowed(it.desc)]
                     lang_dropped += len(items) - len(kept)
                     items = kept
                 for it in select_level0_relative(items, cfg):
@@ -181,6 +183,9 @@ def run_sweep(session, cfg: dict, live: bool,
                     it.market = kw.mercado
                     it.sinal_esperado = kw.sinal_esperado
                     it.novo = it.id not in existing_ids  # NOVIDADE
+                    if pular_vistos and not it.novo:  # novidade na fonte: pula já visto
+                        vistos_pulados += 1
+                        continue
                     n0_by_id[it.id] = it
                 if kw.tipo != "hashtag" or not cursor:
                     break  # top não pagina; hashtag sem cursor acabou
@@ -276,6 +281,7 @@ def run_sweep(session, cfg: dict, live: bool,
         "fisico_dropados": fisico_dropped,
         "highticket_dropados": highticket_dropped,
         "velhos_dropados": velho_dropped,
+        "vistos_pulados": vistos_pulados,
         "n0_posts": len(candidates),
         "comment_fetches": comment_fetches,
         "novos": novos,

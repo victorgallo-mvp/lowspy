@@ -9,7 +9,7 @@ from app.signals import (
     intent_score,
     is_fisico,
     is_high_ticket,
-    is_ptbr,
+    lang_allowed,
     normalize_score,
     select_level0_relative,
 )
@@ -27,10 +27,12 @@ def test_extract_price():
     assert extract_price("sem preço aqui") is None
 
 
-def test_is_ptbr_keeps_pt_drops_foreign():
-    assert is_ptbr("planilha completa acesse o link na bio") is True
-    assert is_ptbr("Ganando dinero con Hotmart, aquí tienes cómo") is False
-    assert is_ptbr("hi semua template terbaru murah untuk kalian") is False
+def test_lang_allowed_pt_es_en():
+    assert lang_allowed("planilha completa acesse o link na bio") is True
+    assert lang_allowed("plantilla editable, el link en la bio") is True   # espanhol OK
+    assert lang_allowed("editable canva template, link in bio") is True    # inglês OK
+    assert lang_allowed("hi semua template terbaru murah untuk kalian") is False  # indonésio
+    assert lang_allowed("бесплатно скачать шаблон") is False  # não-latino
 
 
 def test_intent_score_weights_and_density():
