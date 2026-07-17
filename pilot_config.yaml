@@ -211,7 +211,7 @@ thresholds:
   abs_min_likes: 10
   relative_top_frac: 1.0   # mantém TODOS de cada hashtag (mais oferta)
   intent_threshold: 2.0    # Nível 1: score mínimo pra sobreviver (afrouxado p/ + resultados)
-  recency_days: 180        # infoproduto é evergreen; janela larga p/ mais oferta
+  recency_days: 365        # infoproduto é evergreen; janela larga p/ mais oferta (era 180 — 51% do total_buscado morria aqui)
   exigir_demanda_confirmada: true  # modo teste: só produtos com demanda confirmada no comentário
 
 # --- Score final: demanda dominante + engajamento ponderado (Bloco 3) -------
@@ -259,10 +259,10 @@ weights:
 caps:
   max_search_pages: 1        # páginas de busca por keyword
   max_hashtags: 30           # teto de chamadas /search/hashtag no run (cobre pt+es+en)
-  max_comment_fetches: 100   # teto de fetches de comentário (maior p/ confirmar ~30)
+  max_comment_fetches: 200   # teto de fetches (era 100 — batia antes de avaliar os ~288 candidatos do N0)
   max_posts_per_author: 2    # dedup: até N posts do mesmo autor (variedade + volume)
   max_pages_per_hashtag: 5   # pagina fundo p/ oferta + achar inéditos
-  target_produtos: 30        # para de gastar fetch ao atingir a meta
+  target_produtos: 50        # para de gastar fetch ao atingir a meta (era 30 — subiu junto c/ fetch)
 
 # --- Precificação (ajustar ao teu plano) ------------------------------------
 pricing:
