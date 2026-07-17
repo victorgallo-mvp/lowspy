@@ -193,19 +193,40 @@ def is_high_ticket(text: str, cfg: dict) -> bool:
     return any(m.lower() in low for m in cfg.get("high_ticket", []))
 
 
+def is_servico_local(text: str, cfg: dict) -> bool:
+    """Dropa serviço local/saúde (ruído do Meta Ads): clínica, procedimento
+    estético, hotel, médico — keyword genérica do PDF bate em qualquer
+    pequeno negócio, não só infoproduto digital."""
+    low = (text or "").lower()
+    return any(m.lower() in low for m in cfg.get("servico_local", []))
+
+
+def is_digital_confirmado(text: str, cfg: dict) -> bool:
+    """Confirma que o anúncio É digital de fato (pdf/molde/planilha/download…).
+    No Meta a keyword que achou o anúncio (preço, "Kit") é genérica demais
+    sozinha; exige esse segundo sinal antes de aceitar."""
+    low = (text or "").lower()
+    termos = cfg.get("meta_ads", {}).get("confirmacao_digital", [])
+    return any(t.lower() in low for t in termos)
+
+
 # --------------------------------------------------------------------------- #
 # Meta Ads (Facebook Ad Library) — sem comentário. Sinal de demanda é o TEMPO
 # DE VEICULAÇÃO: anúncio que o anunciante mantém pagando sobreviveu ao teste
 # do mercado (doc do operador: "mais de 15 dias ativos" = boa chance de venda).
 # --------------------------------------------------------------------------- #
 def meta_ativo_norm(dias_ativos: int, cfg: dict) -> float:
-    """Normaliza tempo de veiculação 0-100 (satura em dias_ativos_norm_cap)."""
-    cap_dias = cfg.get("meta_ads", {}).get("dias_ativos_norm_cap", 60)
-    return round(min(100.0, 100.0 * max(0, dias_ativos) / cap_dias), 2)
+    """Normaliza tempo de veiculação 0-80 (satura em dias_ativos_ideal_max — a
+    faixa "ideal" do doc — e não em algo maior). Deixa 20pts de headroom pro
+    bônus de CTA/variações em meta_final_score; sem isso, conta antiga de anos
+    (500-5000 dias) sempre bate o teto sozinha e todo mundo empata em 100."""
+    ideal_max = cfg.get("meta_ads", {}).get("dias_ativos_ideal_max", 30)
+    return round(min(80.0, 80.0 * max(0, dias_ativos) / max(1, ideal_max)), 2)
 
 
 def meta_final_score(dias_ativos: int, collation_count: int, cap_score: float, cfg: dict) -> float:
-    """Score Meta: tempo de veiculação domina + bônus por variações testadas + CTA."""
+    """Score Meta: tempo de veiculação domina (0-80) + bônus por variações testadas
+    e CTA (0-20) — o bônus é o que diferencia anúncios que já saturaram o tempo ativo."""
     ativo_norm = meta_ativo_norm(dias_ativos, cfg)
     colat_bonus = min(10.0, max(0, collation_count) * 2.0)  # testar várias variações = escalando
     cta_bonus = min(10.0, cap_score * 3.0)

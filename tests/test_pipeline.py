@@ -78,11 +78,13 @@ def test_pular_vistos_novidade(session):
 def test_run_sweep_meta_usa_dias_ativos_como_demanda(session):
     _seed_keyword_meta(session)
     r = run_sweep_meta(session, CFG, live=False)
-    # fixture: 2 anúncios digitais >=15 dias ativos sobrevivem; 1 curto (4d) e
-    # 1 físico (frete/correios) são dropados mesmo com 18 dias ativos
+    # fixture: 2 anúncios digitais >=15 dias ativos sobrevivem; 1 curto (4d), 1 físico
+    # (frete/correios), 1 serviço local (harmonização/botox) e 1 sem texto são dropados
     assert r["fonte"] == "meta"
     assert r["curto_dropados"] >= 1
     assert r["fisico_dropados"] >= 1
+    assert r["servico_local_dropados"] >= 1
+    assert r["sem_texto_dropados"] >= 1
     # distribuição dos descartados por tempo curto (diagnóstico): fixture tem 1 anúncio
     # de 4 dias ativos, então min == mediana == max == 4
     assert r["curto_dias_stats"] == {"min": 4, "mediana": 4, "max": 4}

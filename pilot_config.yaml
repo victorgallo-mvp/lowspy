@@ -245,6 +245,32 @@ high_ticket:
   - "masterclass"
   - "bootcamp"
 
+# --- Serviço local/saúde a dropar (ruído do Meta Ads: clínica, procedimento
+# estético, hotel, médico — keyword genérica do PDF ("Kit", preço) bate em
+# qualquer pequeno negócio, não só infoproduto digital) --------------------
+servico_local:
+  - "botox"
+  - "harmonização facial"
+  - "harmonizacao facial"
+  - "preenchimento facial"
+  - "procedimento estético"
+  - "procedimento estetico"
+  - "clínica"
+  - "clinica"
+  - "consultório médico"
+  - "consultorio medico"
+  - "hérnia"
+  - "hernia"
+  - "cirurgia"
+  - "lipoaspiração"
+  - "lipoaspiracao"
+  - "exame preventivo"
+  - "protocolo de tratamento"
+  - "hospedagem"
+  - "diária"
+  - "diaria"
+  - "hotel"
+
 # --- Pesos do score de intenção (peso, não match cru) -----------------------
 weights:
   intencao: 1.0
@@ -291,11 +317,36 @@ meta_ads:
                               # dias; infoproduto low-ticket é majoritariamente imagem/carrossel
   status: "ACTIVE"           # só anúncio ativo agora
   dias_ativos_min: 15        # doc: "Mais de 15 dias ativos"
-  dias_ativos_ideal_max: 30  # doc: faixa recomendada 15-30 dias
-  dias_ativos_norm_cap: 60   # normalização do score: 60 dias ativo = satura em 100
+  dias_ativos_ideal_max: 30  # doc: faixa recomendada 15-30 dias — também é o teto de
+                              # normalização do tempo ativo (satura aqui, não cresce pra
+                              # sempre — conta de anos não deve dominar o ranking só por ser
+                              # antiga; ver meta_ativo_norm)
   max_queries: 40            # cobre as 32 keywords atuais + margem (era 30)
   max_pages_per_query: 4     # era 2 — Meta é 1 crédito/request, barato escalar
   target_produtos: 30
+  # Confirmação de formato digital: keyword do PDF (preço, "Kit", "Pack") é genérica
+  # demais sozinha — bate em clínica, hotel, revenda física. Só aceita o anúncio se
+  # ELE TAMBÉM tiver algum sinal inequívoco de entrega digital (deliberadamente sem
+  # os termos genéricos do grupo "formato" acima, senão vira circular).
+  confirmacao_digital:
+    - "pdf"
+    - "arquivo digital"
+    - "editável"
+    - "editavel"
+    - "canva"
+    - "molde"
+    - "moldes"
+    - "apostila"
+    - "planilha"
+    - "template"
+    - "printable"
+    - "digital download"
+    - "download"
+    - "e-mail"
+    - "email"
+    - "imprimir"
+    - "imprimível"
+    - "imprimivel"
   keywords:
     precificacao:
       - "Apenas R$10"

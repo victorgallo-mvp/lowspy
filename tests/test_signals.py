@@ -8,8 +8,10 @@ from app.signals import (
     extract_price,
     final_score,
     intent_score,
+    is_digital_confirmado,
     is_fisico,
     is_high_ticket,
+    is_servico_local,
     lang_allowed,
     meta_ativo_norm,
     meta_final_score,
@@ -108,6 +110,30 @@ def test_meta_ativo_norm_e_final_score():
     f = meta_final_score(27, collation_count=6, cap_score=cap["score"], cfg=CFG)
     assert 0 <= f <= 100
     assert f > meta_ativo_norm(27, CFG)  # bônus de colation+CTA soma em cima do tempo ativo
+
+
+def test_meta_ativo_norm_nao_favorece_conta_antiga_sem_limite():
+    # antes do fix: conta de 5000+ dias sempre saturava em 100 e empatava com todo
+    # mundo. Satura no teto ideal do doc (30d), não em "quanto mais velho, melhor".
+    ideal = meta_ativo_norm(30, CFG)
+    anos = meta_ativo_norm(5638, CFG)
+    assert ideal == anos == 80.0  # satura, não continua subindo
+    # deixa headroom (score < 100) pro bônus de CTA/collation diferenciar candidatos
+    f = meta_final_score(5638, collation_count=0, cap_score=0.0, cfg=CFG)
+    assert f < 100.0
+
+
+def test_is_servico_local():
+    assert is_servico_local("Protocolo de Harmonização Facial com Botox", CFG) is True
+    assert is_servico_local("Diária no hotel com café da manhã incluso", CFG) is True
+    assert is_servico_local("apostila em PDF, acesso imediato no link", CFG) is False
+
+
+def test_is_digital_confirmado():
+    assert is_digital_confirmado("Kit com 250 Moldes Prontos, arquivo digital por e-mail", CFG) is True
+    assert is_digital_confirmado("Projetos Prontos em PDF, baixe agora", CFG) is True
+    # bateu a keyword de preço/formato mas não confirma ser digital (ruído do Meta)
+    assert is_digital_confirmado("Kit completo apenas R$998,00, agende sua avaliação", CFG) is False
 
 
 def test_classify_signal_meta():

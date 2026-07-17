@@ -24,8 +24,10 @@ from .signals import (
     extract_price,
     final_score,
     intent_score,
+    is_digital_confirmado,
     is_fisico,
     is_high_ticket,
+    is_servico_local,
     lang_allowed,
     meta_final_score,
     normalize_score,
@@ -362,8 +364,11 @@ def run_sweep_meta(session, cfg: dict, live: bool, run_id: Optional[int] = None)
     ).scalars().all()[:max_queries]
 
     total_seen = 0
+    sem_texto_dropped = 0  # sem desc extraída: não dá pra avaliar, não "aprova por padrão"
     fisico_dropped = 0
+    servico_local_dropped = 0  # clínica/procedimento estético/hotel — ruído da keyword genérica
     highticket_dropped = 0
+    nao_digital_dropped = 0  # bateu a keyword (preço/"Kit") mas não confirma ser digital
     curto_dropped = 0  # dias_ativos < dias_ativos_min
     curto_dias: list[int] = []  # distribuição dos descartados (diagnóstico: threshold certo?)
     vistos_pulados = 0
@@ -384,11 +389,20 @@ def run_sweep_meta(session, cfg: dict, live: bool, run_id: Optional[int] = None)
                 for it in items:
                     if not it.id or it.id in n0_by_id:
                         continue  # mantém a 1ª ocorrência
+                    if not it.desc.strip():  # sem texto extraído: não avaliável, fora
+                        sem_texto_dropped += 1
+                        continue
                     if is_fisico(it.desc):  # backstop anti-físico (só digital)
                         fisico_dropped += 1
                         continue
+                    if is_servico_local(it.desc, cfg):  # clínica/procedimento/hotel etc.
+                        servico_local_dropped += 1
+                        continue
                     if is_high_ticket(it.desc, cfg):  # queremos low-ticket
                         highticket_dropped += 1
+                        continue
+                    if not is_digital_confirmado(it.desc, cfg):  # keyword sozinha não prova nada
+                        nao_digital_dropped += 1
                         continue
                     if it.dias_ativos < dias_min:  # não sobreviveu ao teste do mercado ainda
                         curto_dropped += 1
@@ -409,15 +423,22 @@ def run_sweep_meta(session, cfg: dict, live: bool, run_id: Optional[int] = None)
             upsert_post_meta(session, it, it.market)
         session.commit()
 
-        # Sem fetch pago extra: ordena pelos mais tempo no ar (mais "confirmado")
-        candidates = sorted(n0_by_id.values(), key=lambda x: x.dias_ativos, reverse=True)
+        # Sem fetch pago extra: ordena por score_final (tempo ativo + CTA + variações),
+        # não por dias_ativos cru — senão conta antiga de anos sempre vence só por idade.
+        caps_by_id = {it.id: caption_seller_score(it.desc, cfg) for it in n0_by_id.values()}
+        candidates = sorted(
+            n0_by_id.values(),
+            key=lambda it: meta_final_score(it.dias_ativos, it.collation_count,
+                                            caps_by_id[it.id]["score"], cfg),
+            reverse=True,
+        )
 
         survivors = 0
         novos = 0
         for it in candidates:
             if survivors >= target:
                 break
-            cap = caption_seller_score(it.desc, cfg)
+            cap = caps_by_id[it.id]
             sinal = classify_signal_meta(it.dias_ativos, cap, cfg)
             score_val = meta_final_score(it.dias_ativos, it.collation_count, cap["score"], cfg)
             upsert_score_meta(session, it.id, cap, it.dias_ativos, score_val, sinal)
@@ -454,8 +475,11 @@ def run_sweep_meta(session, cfg: dict, live: bool, run_id: Optional[int] = None)
         "modo": "live" if live else "dry-run",
         "fonte": "meta",
         "total_buscado": total_seen,
+        "sem_texto_dropados": sem_texto_dropped,
         "fisico_dropados": fisico_dropped,
+        "servico_local_dropados": servico_local_dropped,
         "highticket_dropados": highticket_dropped,
+        "nao_digital_dropados": nao_digital_dropped,
         "curto_dropados": curto_dropped,
         "curto_dias_stats": curto_dias_stats,  # diagnóstico: threshold errado ou pool é assim mesmo?
         "vistos_pulados": vistos_pulados,

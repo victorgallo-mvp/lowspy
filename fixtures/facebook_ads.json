@@ -1,5 +1,5 @@
 {
-  "searchResultsCount": 4,
+  "searchResultsCount": 6,
   "cursor": null,
   "searchResults": [
     {
@@ -82,6 +82,48 @@
         "images": [{"original_image_url": "https://example.com/img4.jpg", "resized_image_url": "https://example.com/img4_s.jpg"}],
         "videos": [],
         "link_url": "https://example.com/checkout4"
+      },
+      "spend": null,
+      "reach_estimate": null
+    },
+    {
+      "ad_archive_id": "9100000000000005",
+      "ad_id": null,
+      "page_id": "610000000000005",
+      "page_name": "Huff Life Estética",
+      "is_active": true,
+      "start_date": 1717500000,
+      "end_date": null,
+      "total_active_time": 40,
+      "collation_count": 1,
+      "publisher_platform": ["FACEBOOK"],
+      "snapshot": {
+        "body": {"text": "Protocolo de Harmonização Facial com Botox, kit completo apenas R$998,00"},
+        "cta_type": "SHOP_NOW",
+        "images": [],
+        "videos": [],
+        "link_url": "https://example.com/checkout5"
+      },
+      "spend": null,
+      "reach_estimate": null
+    },
+    {
+      "ad_archive_id": "9100000000000006",
+      "ad_id": null,
+      "page_id": "610000000000006",
+      "page_name": "Sem Texto Ltda",
+      "is_active": true,
+      "start_date": 1717000000,
+      "end_date": null,
+      "total_active_time": 60,
+      "collation_count": 0,
+      "publisher_platform": ["FACEBOOK"],
+      "snapshot": {
+        "body": {"text": ""},
+        "cta_type": "SHOP_NOW",
+        "images": [],
+        "videos": [],
+        "link_url": null
       },
       "spend": null,
       "reach_estimate": null
