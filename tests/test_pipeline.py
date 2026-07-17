@@ -83,6 +83,9 @@ def test_run_sweep_meta_usa_dias_ativos_como_demanda(session):
     assert r["fonte"] == "meta"
     assert r["curto_dropados"] >= 1
     assert r["fisico_dropados"] >= 1
+    # distribuição dos descartados por tempo curto (diagnóstico): fixture tem 1 anúncio
+    # de 4 dias ativos, então min == mediana == max == 4
+    assert r["curto_dias_stats"] == {"min": 4, "mediana": 4, "max": 4}
     assert r["sobreviventes"] == 2
     produtos = session.query(Produto).filter(Produto.mercado.like("meta_%")).all()
     assert len(produtos) == 2

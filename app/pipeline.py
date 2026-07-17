@@ -365,6 +365,7 @@ def run_sweep_meta(session, cfg: dict, live: bool, run_id: Optional[int] = None)
     fisico_dropped = 0
     highticket_dropped = 0
     curto_dropped = 0  # dias_ativos < dias_ativos_min
+    curto_dias: list[int] = []  # distribuição dos descartados (diagnóstico: threshold certo?)
     vistos_pulados = 0
     n0_by_id: dict[str, Any] = {}
     existing_ids = {r[0] for r in session.execute(select(Post.id)).all()}
@@ -391,6 +392,7 @@ def run_sweep_meta(session, cfg: dict, live: bool, run_id: Optional[int] = None)
                         continue
                     if it.dias_ativos < dias_min:  # não sobreviveu ao teste do mercado ainda
                         curto_dropped += 1
+                        curto_dias.append(it.dias_ativos)
                         continue
                     it.market = kw.mercado
                     it.sinal_esperado = kw.sinal_esperado
@@ -438,6 +440,16 @@ def run_sweep_meta(session, cfg: dict, live: bool, run_id: Optional[int] = None)
     for pr in session.execute(select(Produto)).scalars().all():
         breadth[pr.mercado] = breadth.get(pr.mercado, 0) + 1
 
+    curto_dias_stats: dict[str, int] = {}
+    if curto_dias:
+        curto_dias.sort()
+        n = len(curto_dias)
+        curto_dias_stats = {
+            "min": curto_dias[0],
+            "mediana": curto_dias[n // 2],
+            "max": curto_dias[-1],
+        }
+
     return {
         "modo": "live" if live else "dry-run",
         "fonte": "meta",
@@ -445,6 +457,7 @@ def run_sweep_meta(session, cfg: dict, live: bool, run_id: Optional[int] = None)
         "fisico_dropados": fisico_dropped,
         "highticket_dropados": highticket_dropped,
         "curto_dropados": curto_dropped,
+        "curto_dias_stats": curto_dias_stats,  # diagnóstico: threshold errado ou pool é assim mesmo?
         "vistos_pulados": vistos_pulados,
         "n0_posts": len(candidates),
         "novos": novos,

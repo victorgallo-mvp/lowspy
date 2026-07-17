@@ -287,13 +287,14 @@ pricing:
 meta_ads:
   enabled: true
   country: "BR"
-  media_type: "VIDEO"        # só vídeo (pedido: "videos do meta")
+  media_type: "ALL"          # era só VIDEO — 99.9% do pool elegível morria no filtro de 15
+                              # dias; infoproduto low-ticket é majoritariamente imagem/carrossel
   status: "ACTIVE"           # só anúncio ativo agora
   dias_ativos_min: 15        # doc: "Mais de 15 dias ativos"
   dias_ativos_ideal_max: 30  # doc: faixa recomendada 15-30 dias
   dias_ativos_norm_cap: 60   # normalização do score: 60 dias ativo = satura em 100
-  max_queries: 30            # teto de chamadas /search/ads no run
-  max_pages_per_query: 2
+  max_queries: 40            # cobre as 32 keywords atuais + margem (era 30)
+  max_pages_per_query: 4     # era 2 — Meta é 1 crédito/request, barato escalar
   target_produtos: 30
   keywords:
     precificacao:
