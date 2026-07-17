@@ -1,6 +1,6 @@
 from app.config import load_config
 from app.models import Comment, CostLog, Keyword, Post, Produto, Run, Score
-from app.pipeline import ranked_products, run_sweep
+from app.pipeline import ranked_products, run_sweep, run_sweep_meta
 
 CFG = load_config()
 
@@ -9,6 +9,14 @@ def _seed_keyword(session):
     session.add(
         Keyword(termo="achadinhos", tipo="hashtag", mercado="fisico_revenda",
                 sinal_esperado="demanda", ativo=True)
+    )
+    session.commit()
+
+
+def _seed_keyword_meta(session):
+    session.add(
+        Keyword(termo="Apenas R$14,90", tipo="meta_query", mercado="meta_precificacao",
+                sinal_esperado="vendedor", ativo=True)
     )
     session.commit()
 
@@ -65,6 +73,30 @@ def test_pular_vistos_novidade(session):
     r = run_sweep(session, CFG, live=False)
     assert r["vistos_pulados"] >= 1
     assert session.query(Produto).count() == prod_1  # não duplicou
+
+
+def test_run_sweep_meta_usa_dias_ativos_como_demanda(session):
+    _seed_keyword_meta(session)
+    r = run_sweep_meta(session, CFG, live=False)
+    # fixture: 2 anúncios digitais >=15 dias ativos sobrevivem; 1 curto (4d) e
+    # 1 físico (frete/correios) são dropados mesmo com 18 dias ativos
+    assert r["fonte"] == "meta"
+    assert r["curto_dropados"] >= 1
+    assert r["fisico_dropados"] >= 1
+    assert r["sobreviventes"] == 2
+    produtos = session.query(Produto).filter(Produto.mercado.like("meta_%")).all()
+    assert len(produtos) == 2
+    posts = {p.post_id: session.get(Post, p.post_id) for p in produtos}
+    assert all(post.fonte == "meta" for post in posts.values())
+    assert all(post.total_active_time >= 15 for post in posts.values())
+
+
+def test_run_sweep_meta_idempotente(session):
+    _seed_keyword_meta(session)
+    run_sweep_meta(session, CFG, live=False)
+    n1 = session.query(Produto).count()
+    run_sweep_meta(session, CFG, live=False)  # re-varredura: pular_vistos evita duplicar
+    assert session.query(Produto).count() == n1
 
 
 def test_ranked_products_orders_by_score(session):

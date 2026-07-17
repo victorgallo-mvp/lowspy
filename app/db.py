@@ -28,6 +28,12 @@ def _ensure_columns() -> None:
         ("produtos", "run_id", "INTEGER"),
         ("produtos", "novo", "BOOLEAN"),
         ("scores", "engaj_score", "REAL"),
+        ("posts", "fonte", "VARCHAR(10) DEFAULT 'tiktok'"),
+        ("posts", "total_active_time", "INTEGER"),
+        ("posts", "collation_count", "INTEGER"),
+        ("posts", "is_active", "BOOLEAN"),
+        ("scores", "dias_ativos", "INTEGER"),
+        ("runs", "fonte", "VARCHAR(10) DEFAULT 'tiktok'"),
     ]
     for table, col, coltype in checks:
         if table in tables:

@@ -14,7 +14,7 @@ from typing import Optional
 from . import config
 from .db import SessionLocal
 from .models import Run
-from .pipeline import run_sweep
+from .pipeline import run_sweep, run_sweep_meta
 
 LOG = logging.getLogger("jobs")
 
@@ -30,7 +30,7 @@ def _now():
     return datetime.now(timezone.utc)
 
 
-def _worker(run_id: int, live: bool, max_hashtags: Optional[int],
+def _worker(run_id: int, live: bool, fonte: str, max_hashtags: Optional[int],
             max_comment_fetches: Optional[int]) -> None:
     session = SessionLocal()
     try:
@@ -40,7 +40,10 @@ def _worker(run_id: int, live: bool, max_hashtags: Optional[int],
         session.commit()
 
         cfg = config.load_config()
-        summary = run_sweep(session, cfg, live, max_hashtags, max_comment_fetches, run_id=run_id)
+        if fonte == "meta":
+            summary = run_sweep_meta(session, cfg, live, run_id=run_id)
+        else:
+            summary = run_sweep(session, cfg, live, max_hashtags, max_comment_fetches, run_id=run_id)
 
         run = session.get(Run, run_id)
         run.status = "done"
@@ -62,19 +65,20 @@ def _worker(run_id: int, live: bool, max_hashtags: Optional[int],
         session.close()
 
 
-def start_sweep(session, live: bool = True, max_hashtags: Optional[int] = None,
+def start_sweep(session, live: bool = True, fonte: str = "tiktok",
+                max_hashtags: Optional[int] = None,
                 max_comment_fetches: Optional[int] = None) -> Optional[int]:
     """Cria o Run e dispara a thread. Retorna run_id, ou None se já há uma rodando."""
     with _lock:
         if _state["active"]:
             return None
-        run = Run(status="queued", mode="live" if live else "dry-run")
+        run = Run(status="queued", mode="live" if live else "dry-run", fonte=fonte)
         session.add(run)
         session.commit()
         run_id = run.id
         _state["active"] = True
     t = threading.Thread(
-        target=_worker, args=(run_id, live, max_hashtags, max_comment_fetches), daemon=True
+        target=_worker, args=(run_id, live, fonte, max_hashtags, max_comment_fetches), daemon=True
     )
     t.start()
     return run_id

@@ -13,7 +13,13 @@ from tenacity import (
 )
 
 from .config import FIXTURES
-from .schemas import CommentSchema, SearchItem, extract_cover, hashtag_to_item
+from .schemas import (
+    CommentSchema,
+    SearchItem,
+    extract_cover,
+    facebook_ad_to_item,
+    hashtag_to_item,
+)
 
 BASE_URL = "https://api.scrapecreators.com"
 
@@ -77,6 +83,22 @@ class LiveClient:
         self.on_call("video_comments", data.get("credits_remaining"), {"url": url})
         return [CommentSchema.model_validate(c) for c in data.get("comments", [])]
 
+    def search_facebook_ads(self, query: str, cfg: dict, cursor=None):
+        m = cfg.get("meta_ads", {})
+        params: dict = {
+            "query": query,
+            "country": m.get("country", "BR"),
+            "media_type": m.get("media_type", "ALL"),
+            "status": m.get("status", "ACTIVE"),
+        }
+        if cursor is not None:
+            params["cursor"] = cursor
+        data = self._get("/v1/facebook/adLibrary/search/ads", params)
+        self.on_call("search_facebook_ads", data.get("credits_remaining"),
+                     {"query": query, "cursor": cursor})
+        items = [facebook_ad_to_item(a) for a in data.get("searchResults", [])]
+        return items, data.get("cursor")  # (items, next_cursor)
+
     def close(self) -> None:
         self._c.close()
 
@@ -89,6 +111,7 @@ class DryRunClient:
         d = fixtures or FIXTURES
         self._top = json.loads((d / "top_search.json").read_text("utf-8"))
         self._comments = json.loads((d / "comments.json").read_text("utf-8"))
+        self._meta_ads = json.loads((d / "facebook_ads.json").read_text("utf-8"))
         self._credits = int(self._top.get("credits_remaining", 1000))
 
     def _spend(self, endpoint: str, params: dict) -> None:
@@ -114,6 +137,11 @@ class DryRunClient:
     def video_comments(self, url: str) -> list[CommentSchema]:
         self._spend("video_comments", {"url": url})
         return [CommentSchema.model_validate(c) for c in self._comments.get("comments", [])]
+
+    def search_facebook_ads(self, query: str, cfg: dict, cursor=None):
+        self._spend("search_facebook_ads", {"query": query, "cursor": cursor})
+        items = [facebook_ad_to_item(a) for a in self._meta_ads.get("searchResults", [])]
+        return items, None  # dry-run: página única
 
     def close(self) -> None:
         pass

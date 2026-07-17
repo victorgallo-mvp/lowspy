@@ -42,10 +42,16 @@ const IconEye = () => (
     <path d="M12 5C6 5 2 12 2 12s4 7 10 7 10-7 10-7-4-7-10-7zm0 11.5A4.5 4.5 0 1112 7a4.5 4.5 0 010 9.5zM12 14a2 2 0 100-4 2 2 0 000 4z" />
   </svg>
 );
+const IconClock = () => (
+  <svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor" aria-hidden>
+    <path d="M12 2a10 10 0 100 20 10 10 0 000-20zm1 10.4l4.2 2.5-.8 1.3-5-3V7h1.6v5.4z" />
+  </svg>
+);
 
 function Row({ p, i }: { p: Produto; i: number }) {
   const [open, setOpen] = useState(false);
   const [imgOk, setImgOk] = useState(true);
+  const isMeta = p.fonte === "meta";
   const comments = open ? p.comentarios_intencao : p.comentarios_intencao.slice(0, 2);
   return (
     <article className="row" style={{ animationDelay: `${i * 40}ms` }}>
@@ -54,7 +60,7 @@ function Row({ p, i }: { p: Produto; i: number }) {
         {String(i + 1).padStart(2, "0")}
       </div>
 
-      <a className="thumb" href={p.url} target="_blank" rel="noreferrer" aria-label="abrir no tiktok">
+      <a className="thumb" href={p.url} target="_blank" rel="noreferrer" aria-label="abrir anúncio">
         {p.cover_url && imgOk ? (
           <img src={p.cover_url} alt="" loading="lazy" onError={() => setImgOk(false)} />
         ) : (
@@ -65,8 +71,12 @@ function Row({ p, i }: { p: Produto; i: number }) {
       <div className="main">
         <div className="title">{p.produto}</div>
         <div className="badges">
+          <span className={`badge src ${isMeta ? "meta" : "tiktok"}`}>
+            {isMeta ? "Meta Ads" : "TikTok"}
+          </span>
           {p.novo && <span className="badge novo">novo</span>}
-          {p.nicho && <span className="badge mkt">{p.nicho}</span>}
+          {isMeta && p.meta?.pagina && <span className="badge mkt">{p.meta.pagina}</span>}
+          {!isMeta && p.nicho && <span className="badge mkt">{p.nicho}</span>}
           {p.preco && (
             <span className="badge price">
               <b>{p.preco}</b>
@@ -74,22 +84,30 @@ function Row({ p, i }: { p: Produto; i: number }) {
           )}
         </div>
 
-        {p.comentarios_intencao.length > 0 && (
+        {isMeta ? (
           <div className="proof">
             <span className="plabel">
-              prova de demanda · {p.score_componentes.n_comentarios_intencao} comentários
+              prova de demanda · sobreviveu {p.meta?.dias_ativos ?? 0} dias ao teste do mercado
             </span>
-            {comments.map((c, k) => (
-              <div className="quote" key={k}>
-                <b>“{c}”</b>
-              </div>
-            ))}
-            {p.comentarios_intencao.length > 2 && (
-              <button className="morebtn" onClick={() => setOpen((v) => !v)}>
-                {open ? "menos" : `+${p.comentarios_intencao.length - 2} comentários`}
-              </button>
-            )}
           </div>
+        ) : (
+          p.comentarios_intencao.length > 0 && (
+            <div className="proof">
+              <span className="plabel">
+                prova de demanda · {p.score_componentes.n_comentarios_intencao} comentários
+              </span>
+              {comments.map((c, k) => (
+                <div className="quote" key={k}>
+                  <b>“{c}”</b>
+                </div>
+              ))}
+              {p.comentarios_intencao.length > 2 && (
+                <button className="morebtn" onClick={() => setOpen((v) => !v)}>
+                  {open ? "menos" : `+${p.comentarios_intencao.length - 2} comentários`}
+                </button>
+              )}
+            </div>
+          )
         )}
       </div>
 
@@ -103,19 +121,30 @@ function Row({ p, i }: { p: Produto; i: number }) {
             <div className="fill" style={{ width: `${Math.min(100, p.score)}%` }} />
           </div>
         </div>
-        <div className="eng">
-          <span title="views">
-            <IconEye /> <b>{compact(p.engajamento.views)}</b>
-          </span>
-          <span title="curtidas">
-            <IconHeart /> <b>{compact(p.engajamento.curtidas)}</b>
-          </span>
-          <span title="comentários">
-            <IconComment /> <b>{compact(p.engajamento.comentarios)}</b>
-          </span>
-        </div>
+        {isMeta ? (
+          <div className="eng">
+            <span title="dias ativos">
+              <IconClock /> <b>{p.meta?.dias_ativos ?? 0}d</b>
+            </span>
+            <span title="variações ativas">
+              <IconComment /> <b>{p.meta?.variacoes_ativas ?? 0}</b>
+            </span>
+          </div>
+        ) : (
+          <div className="eng">
+            <span title="views">
+              <IconEye /> <b>{compact(p.engajamento?.views ?? 0)}</b>
+            </span>
+            <span title="curtidas">
+              <IconHeart /> <b>{compact(p.engajamento?.curtidas ?? 0)}</b>
+            </span>
+            <span title="comentários">
+              <IconComment /> <b>{compact(p.engajamento?.comentarios ?? 0)}</b>
+            </span>
+          </div>
+        )}
         <a className="linkout" href={p.url} target="_blank" rel="noreferrer">
-          abrir no tiktok ↗
+          {isMeta ? "abrir no ad library ↗" : "abrir no tiktok ↗"}
         </a>
       </div>
     </article>
@@ -123,7 +152,8 @@ function Row({ p, i }: { p: Produto; i: number }) {
 }
 
 export default function Dashboard() {
-  const [f, setF] = useState<Filtros>({ limit: 60, run: "latest", only_new: false });
+  const [fonte, setFonte] = useState<"tiktok" | "meta">("tiktok");
+  const [f, setF] = useState<Filtros>({ limit: 60, run: "latest", only_new: false, fonte: "tiktok" });
   const [data, setData] = useState<ProdutosResp | null>(null);
   const [custo, setCusto] = useState<CustoResp | null>(null);
   const [varreduras, setVarreduras] = useState<Varredura[]>([]);
@@ -203,7 +233,7 @@ export default function Dashboard() {
     const token =
       typeof window !== "undefined" ? localStorage.getItem("lowspy_token") ?? undefined : undefined;
     try {
-      const { run_id } = await triggerSweep(dry, token);
+      const { run_id } = await triggerSweep(dry, token, fonte);
       pollRun(run_id);
     } catch (e) {
       if (e instanceof TriggerError && e.code === 401) {
@@ -211,7 +241,7 @@ export default function Dashboard() {
         if (!t) return setSweepMsg("disparo cancelado (sem token)");
         localStorage.setItem("lowspy_token", t);
         try {
-          const { run_id } = await triggerSweep(dry, t);
+          const { run_id } = await triggerSweep(dry, t, fonte);
           pollRun(run_id);
         } catch {
           setSweepMsg("token rejeitado");
@@ -222,9 +252,24 @@ export default function Dashboard() {
         setSweepMsg("falha ao disparar");
       }
     }
-  }, [dry, sweeping, pollRun]);
+  }, [dry, sweeping, pollRun, fonte]);
 
   const set = (patch: Partial<Filtros>) => setF((v) => ({ ...v, ...patch }));
+
+  const switchFonte = (novaFonte: "tiktok" | "meta") => {
+    if (novaFonte === fonte) return;
+    setFonte(novaFonte);
+    setSweepMsg(null);
+    // filtros de engajamento (views/likes/comentários) não existem no Meta Ad Library
+    setF((v) => ({
+      ...v,
+      fonte: novaFonte,
+      run: "latest",
+      min_views: undefined,
+      min_likes: undefined,
+      min_comments: undefined,
+    }));
+  };
   const hoje = custo?.dias?.[custo.dias.length - 1];
   const maxDia = Math.max(1, ...(custo?.dias ?? []).map((d) => d.total_usd));
 
@@ -238,8 +283,8 @@ export default function Dashboard() {
           <span className="kicker">radar de demanda</span>
         </div>
         <p className="tagline">
-          Infoprodutos <b>low-ticket</b> com demanda real, minerados do TikTok orgânico —
-          rankeados pelo sinal que prova a saída.
+          Infoprodutos <b>low-ticket</b> com demanda real, minerados do TikTok orgânico e do
+          Meta Ad Library — rankeados pelo sinal que prova a saída.
         </p>
       </header>
 
@@ -265,9 +310,25 @@ export default function Dashboard() {
         </div>
       </section>
 
+      {/* filtro de fonte — separa TikTok orgânico de Meta Ads */}
+      <section className="fontebar">
+        <button
+          className={`tab ${fonte === "tiktok" ? "active" : ""}`}
+          onClick={() => switchFonte("tiktok")}
+        >
+          TikTok
+        </button>
+        <button
+          className={`tab ${fonte === "meta" ? "active" : ""}`}
+          onClick={() => switchFonte("meta")}
+        >
+          Meta Ads
+        </button>
+      </section>
+
       <section className="actions">
         <button className="btn" onClick={runSweep} disabled={sweeping}>
-          {sweeping ? "⣾ minerando…" : "◆ rodar varredura"}
+          {sweeping ? "⣾ minerando…" : `◆ rodar varredura · ${fonte === "meta" ? "Meta Ads" : "TikTok"}`}
         </button>
         <label className="dry">
           <input type="checkbox" checked={dry} onChange={(e) => setDry(e.target.checked)} />
@@ -282,7 +343,7 @@ export default function Dashboard() {
         <select value={f.run ?? "latest"} onChange={(e) => set({ run: e.target.value })}>
           <option value="latest">última busca</option>
           {varreduras
-            .filter((v) => v.n_produtos > 0)
+            .filter((v) => v.n_produtos > 0 && v.fonte === fonte)
             .map((v) => (
               <option key={v.id} value={String(v.id)}>
                 {fmtDate(v.finished_at)} · {v.n_produtos} produtos
@@ -303,23 +364,27 @@ export default function Dashboard() {
         </span>
       </section>
 
-      {/* filtros de engajamento */}
+      {/* filtros de engajamento — views/likes/comentários só existem no TikTok orgânico */}
       <section className="filters">
-        <div className="grp">
-          <label>views mín.</label>
-          <input type="number" min={0} placeholder="—" value={f.min_views ?? ""}
-            onChange={(e) => set({ min_views: e.target.value ? Number(e.target.value) : undefined })} />
-        </div>
-        <div className="grp">
-          <label>curtidas mín.</label>
-          <input type="number" min={0} placeholder="—" value={f.min_likes ?? ""}
-            onChange={(e) => set({ min_likes: e.target.value ? Number(e.target.value) : undefined })} />
-        </div>
-        <div className="grp">
-          <label>comentários mín.</label>
-          <input type="number" min={0} placeholder="—" value={f.min_comments ?? ""}
-            onChange={(e) => set({ min_comments: e.target.value ? Number(e.target.value) : undefined })} />
-        </div>
+        {fonte === "tiktok" && (
+          <>
+            <div className="grp">
+              <label>views mín.</label>
+              <input type="number" min={0} placeholder="—" value={f.min_views ?? ""}
+                onChange={(e) => set({ min_views: e.target.value ? Number(e.target.value) : undefined })} />
+            </div>
+            <div className="grp">
+              <label>curtidas mín.</label>
+              <input type="number" min={0} placeholder="—" value={f.min_likes ?? ""}
+                onChange={(e) => set({ min_likes: e.target.value ? Number(e.target.value) : undefined })} />
+            </div>
+            <div className="grp">
+              <label>comentários mín.</label>
+              <input type="number" min={0} placeholder="—" value={f.min_comments ?? ""}
+                onChange={(e) => set({ min_comments: e.target.value ? Number(e.target.value) : undefined })} />
+            </div>
+          </>
+        )}
         <div className="grp">
           <label>preço máx (R$)</label>
           <input type="number" min={0} placeholder="—" value={f.preco_max ?? ""}

@@ -20,12 +20,14 @@ from .scrapecreators import DryRunClient, LiveClient
 from .signals import (
     caption_seller_score,
     classify_signal,
+    classify_signal_meta,
     extract_price,
     final_score,
     intent_score,
     is_fisico,
     is_high_ticket,
     lang_allowed,
+    meta_final_score,
     normalize_score,
     select_level0_relative,
 )
@@ -74,6 +76,45 @@ def upsert_post(session, item, market: str) -> Post:
     post.play_count = item.statistics.play_count
     post.share_count = item.statistics.share_count
     return post
+
+
+def upsert_post_meta(session, item, market: str) -> Post:
+    """Upsert de anúncio do Meta (Facebook Ad Library). Reaproveita Post: author_id/
+    author_nick viram page_id/page_name; digg/comment/play/share ficam 0 (não existem
+    aqui — o sinal de demanda é total_active_time, não engajamento público)."""
+    post = session.get(Post, item.id)
+    if post is None:
+        post = Post(id=item.id)
+        session.add(post)
+    post.fonte = "meta"
+    post.url = item.url
+    if item.cover_url:
+        post.cover_url = item.cover_url
+    post.descricao = item.desc
+    post.content_type = "video" if item.snapshot.videos else ("image" if item.snapshot.images else "")
+    try:
+        post.create_time = int(item.start_date) if item.start_date else None
+    except (TypeError, ValueError):
+        post.create_time = None
+    post.author_id = item.page_id
+    post.author_nick = item.page_name
+    post.market = market
+    post.total_active_time = item.dias_ativos
+    post.collation_count = item.collation_count
+    post.is_active = item.is_active
+    return post
+
+
+def upsert_score_meta(session, post_id: str, cap: dict, dias_ativos: int,
+                      score_final: float, sinal: str) -> None:
+    sc = session.execute(select(Score).where(Score.post_id == post_id)).scalar_one_or_none()
+    if sc is None:
+        sc = Score(post_id=post_id)
+        session.add(sc)
+    sc.caption_score = cap["score"]
+    sc.dias_ativos = dias_ativos
+    sc.score_final = score_final
+    sc.sinal = sinal
 
 
 def upsert_score(session, post_id: str, intent: dict, cap: dict, score_final: float,
@@ -284,6 +325,128 @@ def run_sweep(session, cfg: dict, live: bool,
         "vistos_pulados": vistos_pulados,
         "n0_posts": len(candidates),
         "comment_fetches": comment_fetches,
+        "novos": novos,
+        "sobreviventes": survivors,
+        "breadth": breadth,
+        "creditos_gastos": cost.total_credits(),
+        "requests": dict(cost.counts),
+    }
+
+
+# --------------------------------------------------------------------------- #
+# Varredura Meta Ads (Facebook Ad Library) — fonte separada, sem comentário.
+# Sinal de demanda: TEMPO DE VEICULAÇÃO (doc do operador — anúncio que sobrevive
+# ao teste do mercado), não intenção em comentário.
+# --------------------------------------------------------------------------- #
+def run_sweep_meta(session, cfg: dict, live: bool, run_id: Optional[int] = None) -> dict[str, Any]:
+    m = cfg.get("meta_ads", {})
+    if not m.get("enabled", False):
+        return {"modo": "meta-disabled", "fonte": "meta", "sobreviventes": 0}
+
+    max_queries = m.get("max_queries", 30)
+    max_pages = m.get("max_pages_per_query", 2)
+    dias_min = m.get("dias_ativos_min", 15)
+    target = m.get("target_produtos", 30)
+    pular_vistos = cfg.get("discovery", {}).get("pular_vistos", False)
+
+    cost = DBCost(session)
+    if live:
+        if not config.SCRAPECREATORS_API_KEY:
+            raise RuntimeError("--live requer SCRAPECREATORS_API_KEY no .env")
+        client: Any = LiveClient(config.SCRAPECREATORS_API_KEY, cost.record)
+    else:
+        client = DryRunClient(cost.record)
+
+    keywords = session.execute(
+        select(Keyword).where(Keyword.ativo == True, Keyword.tipo == "meta_query")  # noqa: E712
+    ).scalars().all()[:max_queries]
+
+    total_seen = 0
+    fisico_dropped = 0
+    highticket_dropped = 0
+    curto_dropped = 0  # dias_ativos < dias_ativos_min
+    vistos_pulados = 0
+    n0_by_id: dict[str, Any] = {}
+    existing_ids = {r[0] for r in session.execute(select(Post.id)).all()}
+
+    try:
+        for kw in keywords:
+            LOG.info("Busca Meta | %s/%s | %r", kw.mercado, kw.sinal_esperado, kw.termo)
+            cursor = None
+            for _page in range(max_pages):
+                try:
+                    items, cursor = client.search_facebook_ads(kw.termo, cfg, cursor)
+                except Exception as e:  # falha de coleta não derruba o pipeline
+                    LOG.error("Busca Meta falhou para %r: %s", kw.termo, e)
+                    break
+                total_seen += len(items)
+                for it in items:
+                    if not it.id or it.id in n0_by_id:
+                        continue  # mantém a 1ª ocorrência
+                    if is_fisico(it.desc):  # backstop anti-físico (só digital)
+                        fisico_dropped += 1
+                        continue
+                    if is_high_ticket(it.desc, cfg):  # queremos low-ticket
+                        highticket_dropped += 1
+                        continue
+                    if it.dias_ativos < dias_min:  # não sobreviveu ao teste do mercado ainda
+                        curto_dropped += 1
+                        continue
+                    it.market = kw.mercado
+                    it.sinal_esperado = kw.sinal_esperado
+                    it.novo = it.id not in existing_ids
+                    if pular_vistos and not it.novo:
+                        vistos_pulados += 1
+                        continue
+                    n0_by_id[it.id] = it
+                if not cursor:
+                    break
+
+        # Upsert dos anúncios únicos (1 por ad_archive_id) — idempotente
+        for it in n0_by_id.values():
+            upsert_post_meta(session, it, it.market)
+        session.commit()
+
+        # Sem fetch pago extra: ordena pelos mais tempo no ar (mais "confirmado")
+        candidates = sorted(n0_by_id.values(), key=lambda x: x.dias_ativos, reverse=True)
+
+        survivors = 0
+        novos = 0
+        for it in candidates:
+            if survivors >= target:
+                break
+            cap = caption_seller_score(it.desc, cfg)
+            sinal = classify_signal_meta(it.dias_ativos, cap, cfg)
+            score_val = meta_final_score(it.dias_ativos, it.collation_count, cap["score"], cfg)
+            upsert_score_meta(session, it.id, cap, it.dias_ativos, score_val, sinal)
+            post = session.get(Post, it.id)
+            post.processed_at = datetime.now(timezone.utc)
+            if sinal != "sem_sinal":
+                upsert_produto(session, post, score_val, sinal, extract_price(it.desc),
+                               run_id, novo=it.novo)
+                survivors += 1
+                if it.novo:
+                    novos += 1
+            LOG.info("  META [%s] %s%s dias_ativos=%s score=%.1f | %s",
+                     it.market, sinal, " NOVO" if it.novo else "",
+                     it.dias_ativos, score_val, it.desc[:40])
+        session.commit()
+    finally:
+        client.close()
+
+    breadth: dict[str, int] = {}
+    for pr in session.execute(select(Produto)).scalars().all():
+        breadth[pr.mercado] = breadth.get(pr.mercado, 0) + 1
+
+    return {
+        "modo": "live" if live else "dry-run",
+        "fonte": "meta",
+        "total_buscado": total_seen,
+        "fisico_dropados": fisico_dropped,
+        "highticket_dropados": highticket_dropped,
+        "curto_dropados": curto_dropped,
+        "vistos_pulados": vistos_pulados,
+        "n0_posts": len(candidates),
         "novos": novos,
         "sobreviventes": survivors,
         "breadth": breadth,

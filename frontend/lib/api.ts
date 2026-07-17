@@ -10,6 +10,7 @@ export const API_BASE = resolveBase();
 
 export type Produto = {
   post_id: string;
+  fonte: "tiktok" | "meta";
   mercado: string;
   sinal: string;
   novo: boolean;
@@ -19,12 +20,14 @@ export type Produto = {
   nicho: string | null;
   url: string;
   cover_url: string | null;
-  engajamento: { curtidas: number; comentarios: number; views: number };
+  engajamento?: { curtidas: number; comentarios: number; views: number };
+  meta?: { pagina: string; dias_ativos: number; variacoes_ativas: number; ativo: boolean };
   score_componentes: {
-    comment_score: number;
+    comment_score?: number;
     caption_score: number;
-    n_comentarios_intencao: number;
-    densidade_intencao: number;
+    n_comentarios_intencao?: number;
+    densidade_intencao?: number;
+    dias_ativos?: number;
   };
   comentarios_intencao: string[];
 };
@@ -40,6 +43,8 @@ export type CustoDia = {
 };
 export type CustoResp = { credit_usd: number; dias: CustoDia[] };
 
+export type Fonte = "tiktok" | "meta" | "all";
+
 export type Filtros = {
   min_score?: number;
   min_views?: number;
@@ -49,12 +54,14 @@ export type Filtros = {
   limit?: number;
   run?: string; // latest | all | <id>
   only_new?: boolean;
+  fonte?: Fonte;
 };
 
 export type Varredura = {
   id: number;
   status: string;
   mode: string;
+  fonte: "tiktok" | "meta";
   finished_at: string | null;
   n_produtos: number;
 };
@@ -69,6 +76,7 @@ export async function getProdutos(f: Filtros): Promise<ProdutosResp> {
   if (f.only_new) q.set("only_new", "true");
   q.set("run", f.run ?? "latest");
   q.set("limit", String(f.limit ?? 60));
+  q.set("fonte", f.fonte ?? "all");
   const r = await fetch(`${API_BASE}/produtos?${q.toString()}`, { cache: "no-store" });
   if (!r.ok) throw new Error(`API ${r.status}`);
   return r.json();
@@ -90,6 +98,7 @@ export type Run = {
   id: number;
   status: "queued" | "running" | "done" | "error" | "interrupted";
   mode: string;
+  fonte: "tiktok" | "meta";
   summary: {
     sobreviventes?: number;
     total_buscado?: number;
@@ -107,8 +116,12 @@ export class TriggerError extends Error {
   }
 }
 
-export async function triggerSweep(dry: boolean, token?: string): Promise<{ run_id: number }> {
-  const r = await fetch(`${API_BASE}/varredura?dry=${dry}`, {
+export async function triggerSweep(
+  dry: boolean,
+  token?: string,
+  fonte: "tiktok" | "meta" = "tiktok"
+): Promise<{ run_id: number }> {
+  const r = await fetch(`${API_BASE}/varredura?dry=${dry}&fonte=${fonte}`, {
     method: "POST",
     headers: token ? { "X-API-Token": token } : {},
   });

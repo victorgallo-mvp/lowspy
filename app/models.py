@@ -41,20 +41,24 @@ class Post(Base):
 
     __tablename__ = "posts"
 
-    id = Column(String(40), primary_key=True)  # aweme_id
+    id = Column(String(40), primary_key=True)  # aweme_id (tiktok) | ad_archive_id (meta)
+    fonte = Column(String(10), nullable=False, default="tiktok")  # tiktok | meta
     url = Column(Text, nullable=False)
     cover_url = Column(Text, nullable=True)  # capa do TikTok p/ preview (pode expirar)
     descricao = Column(Text, default="")
     content_type = Column(String(32), default="")
     create_time = Column(BigInteger, nullable=True)
     region = Column(String(8), default="")
-    author_id = Column(String(120), default="")
-    author_nick = Column(String(120), default="")
+    author_id = Column(String(120), default="")   # tiktok: author_id  | meta: page_id
+    author_nick = Column(String(120), default="")  # tiktok: nickname   | meta: page_name
     market = Column(String(60), default="")
     digg_count = Column(Integer, default=0)
     comment_count = Column(Integer, default=0)
     play_count = Column(Integer, default=0)
     share_count = Column(Integer, default=0)
+    total_active_time = Column(Integer, nullable=True)  # meta: dias de veiculação
+    collation_count = Column(Integer, nullable=True)     # meta: nº de variações do anúncio
+    is_active = Column(Boolean, nullable=True)           # meta: anúncio ainda ativo?
     first_seen = Column(DateTime, server_default=func.now())
     last_seen = Column(DateTime, server_default=func.now(), onupdate=func.now())
     processed_at = Column(DateTime, nullable=True)  # N1 concluído (dedup de fetch)
@@ -94,6 +98,7 @@ class Score(Base):
     caption_score = Column(Float, default=0.0)
     comment_score = Column(Float, default=0.0)
     engaj_score = Column(Float, default=0.0)  # engajamento normalizado (Bloco 3)
+    dias_ativos = Column(Integer, default=0)  # meta: tempo de veiculação (sinal de demanda)
     score_final = Column(Float, default=0.0)  # normalizado 0-100
     sinal = Column(String(32), default="")  # demanda_confirmada | vendedor_off_platform
     created_at = Column(DateTime, server_default=func.now())
@@ -128,6 +133,7 @@ class Run(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     status = Column(String(20), default="queued")  # queued|running|done|error|interrupted
     mode = Column(String(10), default="live")       # live|dry-run
+    fonte = Column(String(10), default="tiktok")     # tiktok|meta
     started_at = Column(DateTime, nullable=True)
     finished_at = Column(DateTime, nullable=True)
     summary = Column(JSON, nullable=True)

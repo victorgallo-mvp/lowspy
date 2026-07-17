@@ -52,8 +52,9 @@ def get_db():
 
 
 def _serialize(pr: Produto, post: Post, sc: Score) -> dict:
-    return {
+    base = {
         "post_id": post.id,
+        "fonte": post.fonte,
         "mercado": pr.mercado,
         "sinal": pr.sinal,
         "novo": bool(pr.novo),
@@ -63,21 +64,35 @@ def _serialize(pr: Produto, post: Post, sc: Score) -> dict:
         "nicho": pr.nicho,
         "url": post.url,
         "cover_url": post.cover_url,
-        "engajamento": {
+    }
+    if post.fonte == "meta":
+        base["meta"] = {
+            "pagina": post.author_nick,
+            "dias_ativos": post.total_active_time,
+            "variacoes_ativas": post.collation_count,
+            "ativo": bool(post.is_active),
+        }
+        base["score_componentes"] = {
+            "caption_score": sc.caption_score,
+            "dias_ativos": sc.dias_ativos,
+        }
+        base["comentarios_intencao"] = []  # Meta Ad Library não tem comentário
+    else:
+        base["engajamento"] = {
             "curtidas": post.digg_count,
             "comentarios": post.comment_count,
             "views": post.play_count,
-        },
-        "score_componentes": {
+        }
+        base["score_componentes"] = {
             "comment_score": sc.comment_score,
             "caption_score": sc.caption_score,
             "engaj_score": sc.engaj_score,
             "n_comentarios_intencao": sc.n_comentarios_intencao,
             "densidade_intencao": sc.densidade_intencao,
-        },
+        }
         # LGPD: só o texto do comentário, sem nick/uid.
-        "comentarios_intencao": [c.texto for c in post.comentarios if c.is_intent][:8],
-    }
+        base["comentarios_intencao"] = [c.texto for c in post.comentarios if c.is_intent][:8]
+    return base
 
 
 @app.get("/health")
@@ -85,8 +100,11 @@ def health():
     return {"ok": True}
 
 
-def _latest_run_id(db) -> Optional[int]:
-    return db.execute(select(func.max(Produto.run_id))).scalar()
+def _latest_run_id(db, fonte: str = "all") -> Optional[int]:
+    q = select(func.max(Produto.run_id))
+    if fonte != "all":
+        q = q.join(Post, Produto.post_id == Post.id).where(Post.fonte == fonte)
+    return db.execute(q).scalar()
 
 
 @app.get("/produtos")
@@ -101,6 +119,7 @@ def listar_produtos(
     run: str = Query("latest", description="latest | all | <run_id>"),
     only_new: bool = Query(False, description="só produtos novos (não vistos antes)"),
     sort: str = Query("views", description="views (viralização) | score"),
+    fonte: str = Query("all", description="tiktok | meta | all"),
 ):
     q = (
         select(Produto, Post, Score)
@@ -108,6 +127,8 @@ def listar_produtos(
         .join(Score, Score.post_id == Post.id)
         .where(Produto.score_final >= min_score)
     )
+    if fonte != "all":
+        q = q.where(Post.fonte == fonte)
     if only_new:
         q = q.where(Produto.novo == True)  # noqa: E712
     # filtros de engajamento (a régua é do operador)
@@ -126,10 +147,13 @@ def listar_produtos(
             except ValueError:
                 rid = None
         if rid is None:
-            rid = _latest_run_id(db)
+            rid = _latest_run_id(db, fonte)
         if rid is not None:
             q = q.where(Produto.run_id == rid)
-    order_col = Post.play_count.desc() if sort == "views" else Produto.score_final.desc()
+    # meta não tem views públicas (Ad Library) — cai pra score automaticamente
+    order_col = (
+        Post.play_count.desc() if sort == "views" and fonte != "meta" else Produto.score_final.desc()
+    )
     q = q.order_by(order_col).limit(limit)
     itens = [_serialize(pr, post, sc) for pr, post, sc in db.execute(q).all()]
     # filtro de preço aplicado em Python (preço é string livre extraída)
@@ -193,6 +217,7 @@ def _run_dict(run: Run) -> dict:
         "id": run.id,
         "status": run.status,
         "mode": run.mode,
+        "fonte": run.fonte,
         "summary": run.summary,
         "error": run.error,
         "started_at": run.started_at.isoformat() if run.started_at else None,
@@ -204,13 +229,16 @@ def _run_dict(run: Run) -> dict:
 def disparar_varredura(
     db=Depends(get_db),
     dry: bool = Query(False, description="true = dry-run (fixtures, gasto zero)"),
+    fonte: str = Query("tiktok", description="tiktok | meta"),
     x_api_token: Optional[str] = Header(None),
 ):
     _require_token(x_api_token)
-    run_id = jobs.start_sweep(db, live=not dry)
+    if fonte not in ("tiktok", "meta"):
+        raise HTTPException(status_code=400, detail="fonte inválida (tiktok|meta)")
+    run_id = jobs.start_sweep(db, live=not dry, fonte=fonte)
     if run_id is None:
         raise HTTPException(status_code=409, detail="já existe uma varredura em andamento")
-    return {"run_id": run_id, "status": "queued", "mode": "dry-run" if dry else "live"}
+    return {"run_id": run_id, "status": "queued", "mode": "dry-run" if dry else "live", "fonte": fonte}
 
 
 @app.get("/varredura/status")
@@ -240,6 +268,7 @@ def listar_varreduras(db=Depends(get_db), limit: int = Query(20, ge=1, le=100)):
                 "id": r.id,
                 "status": r.status,
                 "mode": r.mode,
+                "fonte": r.fonte,
                 "finished_at": r.finished_at.isoformat() if r.finished_at else None,
                 "n_produtos": counts.get(r.id, 0),
             }

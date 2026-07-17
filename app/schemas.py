@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -95,4 +95,85 @@ def hashtag_to_item(a: dict[str, Any]) -> SearchItem:
         statistics=SearchStats.model_validate(a.get("statistics", {}) or {}),
         author=a.get("author", {}) or {},
         cover_url=extract_cover(a),
+    )
+
+
+# --------------------------------------------------------------------------- #
+# Meta Ads (Facebook Ad Library) — fonte separada, sem comentário. O sinal de
+# demanda é o tempo de veiculação (anúncio que sobreviveu ao teste do mercado).
+# --------------------------------------------------------------------------- #
+class AdSnapshotBody(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    text: str = ""
+
+
+class AdSnapshot(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    body: AdSnapshotBody = Field(default_factory=AdSnapshotBody)
+    link_url: Optional[str] = None
+    videos: list = Field(default_factory=list)
+    images: list = Field(default_factory=list)
+
+
+class AdItem(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    ad_archive_id: str = ""
+    page_id: str = ""
+    page_name: str = ""
+    is_active: bool = False
+    start_date: Any = None
+    end_date: Any = None
+    total_active_time: Any = 0
+    collation_count: int = 0
+    publisher_platform: list[str] = Field(default_factory=list)
+    snapshot: AdSnapshot = Field(default_factory=AdSnapshot)
+    market: str = ""
+    sinal_esperado: str = ""
+    novo: bool = False  # transiente: 1ª vez visto (não estava no DB antes deste run)
+
+    @property
+    def id(self) -> str:
+        return self.ad_archive_id
+
+    @property
+    def desc(self) -> str:
+        return self.snapshot.body.text or ""
+
+    @property
+    def url(self) -> str:
+        return f"https://www.facebook.com/ads/library/?id={self.ad_archive_id}" if self.ad_archive_id else ""
+
+    @property
+    def dias_ativos(self) -> int:
+        try:
+            return int(self.total_active_time)
+        except (TypeError, ValueError):
+            return 0
+
+    @property
+    def cover_url(self) -> str:
+        imgs = self.snapshot.images or []
+        if imgs:
+            first = imgs[0]
+            if isinstance(first, dict):
+                return first.get("original_image_url") or first.get("resized_image_url") or ""
+        vids = self.snapshot.videos or []
+        if vids and isinstance(vids[0], dict):
+            return vids[0].get("video_preview_image_url") or ""
+        return ""
+
+
+def facebook_ad_to_item(a: dict[str, Any]) -> AdItem:
+    """Normaliza item de /facebook/adLibrary/search/ads (searchResults)."""
+    return AdItem(
+        ad_archive_id=str(a.get("ad_archive_id", "")),
+        page_id=str(a.get("page_id", "")),
+        page_name=a.get("page_name", "") or "",
+        is_active=bool(a.get("is_active", False)),
+        start_date=a.get("start_date"),
+        end_date=a.get("end_date"),
+        total_active_time=a.get("total_active_time", 0),
+        collation_count=int(a.get("collation_count") or 0),
+        publisher_platform=a.get("publisher_platform", []) or [],
+        snapshot=AdSnapshot.model_validate(a.get("snapshot", {}) or {}),
     )

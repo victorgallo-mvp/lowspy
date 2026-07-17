@@ -1,0 +1,90 @@
+{
+  "searchResultsCount": 4,
+  "cursor": null,
+  "searchResults": [
+    {
+      "ad_archive_id": "9100000000000001",
+      "ad_id": null,
+      "page_id": "610000000000001",
+      "page_name": "Ateliê Digital Moldes",
+      "is_active": true,
+      "start_date": 1719000000,
+      "end_date": null,
+      "total_active_time": 27,
+      "collation_count": 6,
+      "publisher_platform": ["FACEBOOK", "INSTAGRAM"],
+      "snapshot": {
+        "body": {"text": "Kit com 250 Moldes Prontos para Imprimir, apenas R$14,90! Download imediato, arquivo digital enviado por e-mail."},
+        "cta_type": "SHOP_NOW",
+        "images": [{"original_image_url": "https://example.com/img1.jpg", "resized_image_url": "https://example.com/img1_s.jpg"}],
+        "videos": [],
+        "link_url": "https://example.com/checkout1"
+      },
+      "spend": null,
+      "reach_estimate": null
+    },
+    {
+      "ad_archive_id": "9100000000000002",
+      "ad_id": null,
+      "page_id": "610000000000002",
+      "page_name": "Papelaria Criativa PDF",
+      "is_active": true,
+      "start_date": 1721500000,
+      "end_date": null,
+      "total_active_time": 4,
+      "collation_count": 1,
+      "publisher_platform": ["FACEBOOK"],
+      "snapshot": {
+        "body": {"text": "Projetos Prontos em PDF, baixe agora por apenas R$9,90"},
+        "cta_type": "SHOP_NOW",
+        "images": [],
+        "videos": [{"video_preview_image_url": "https://example.com/vid2_preview.jpg"}],
+        "link_url": "https://example.com/checkout2"
+      },
+      "spend": null,
+      "reach_estimate": null
+    },
+    {
+      "ad_archive_id": "9100000000000003",
+      "ad_id": null,
+      "page_id": "610000000000003",
+      "page_name": "Atividades Escolares Pack",
+      "is_active": true,
+      "start_date": 1717000000,
+      "end_date": null,
+      "total_active_time": 21,
+      "collation_count": 3,
+      "publisher_platform": ["INSTAGRAM"],
+      "snapshot": {
+        "body": {"text": "500 Atividades prontas para imprimir, kit completo apenas R$19,90. Acesso imediato após a compra."},
+        "cta_type": "SHOP_NOW",
+        "images": [{"original_image_url": "https://example.com/img3.jpg", "resized_image_url": "https://example.com/img3_s.jpg"}],
+        "videos": [],
+        "link_url": "https://example.com/checkout3"
+      },
+      "spend": null,
+      "reach_estimate": null
+    },
+    {
+      "ad_archive_id": "9100000000000004",
+      "ad_id": null,
+      "page_id": "610000000000004",
+      "page_name": "Frete Grátis Enxovais",
+      "is_active": true,
+      "start_date": 1720800000,
+      "end_date": null,
+      "total_active_time": 18,
+      "collation_count": 2,
+      "publisher_platform": ["FACEBOOK"],
+      "snapshot": {
+        "body": {"text": "Enxoval completo com frete grátis, enviamos pelos Correios para todo Brasil"},
+        "cta_type": "SHOP_NOW",
+        "images": [{"original_image_url": "https://example.com/img4.jpg", "resized_image_url": "https://example.com/img4_s.jpg"}],
+        "videos": [],
+        "link_url": "https://example.com/checkout4"
+      },
+      "spend": null,
+      "reach_estimate": null
+    }
+  ]
+}

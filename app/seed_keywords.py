@@ -21,24 +21,35 @@ _VENDEDOR_MARKETS = {
 def seed(session=None) -> dict:
     """Resync idempotente do DB de keywords com a taxonomia do config:
     insere as novas, atualiza mercado/sinal/ativo, e DESATIVA (não apaga) as que
-    saíram do config. Assim um redeploy com AUTO_SEED reflete o config de verdade."""
+    saíram do config. Assim um redeploy com AUTO_SEED reflete o config de verdade.
+
+    Cobre dois tipos: "hashtag" (TikTok, discovery.markets) e "meta_query"
+    (Facebook Ad Library, meta_ads.keywords — termos EXATOS do doc do operador)."""
     cfg = load_config()
     disc = cfg.get("discovery", {})
     enabled = set(disc.get("enabled_markets", []))
+    meta = cfg.get("meta_ads", {})
+    meta_enabled = bool(meta.get("enabled", False))
     own = session is None
     session = session or SessionLocal()
     inserted = updated = deactivated = 0
     try:
-        desired: dict[str, tuple] = {}
+        # (termo, tipo) -> (mercado, sinal, ativo)
+        desired: dict[tuple[str, str], tuple] = {}
         for market, tags in disc.get("markets", {}).items():
             sinal = "vendedor" if market in _VENDEDOR_MARKETS else "demanda"
             for termo in tags:
-                desired[termo] = (market, sinal, market in enabled)
+                desired[(termo, "hashtag")] = (market, sinal, market in enabled)
 
-        for termo, (market, sinal, ativo) in desired.items():
-            kw = session.query(Keyword).filter_by(termo=termo, tipo="hashtag").first()
+        for grupo, tags in meta.get("keywords", {}).items():
+            market = f"meta_{grupo}"
+            for termo in tags:
+                desired[(termo, "meta_query")] = (market, "vendedor", meta_enabled)
+
+        for (termo, tipo), (market, sinal, ativo) in desired.items():
+            kw = session.query(Keyword).filter_by(termo=termo, tipo=tipo).first()
             if kw is None:
-                session.add(Keyword(termo=termo, tipo="hashtag", mercado=market,
+                session.add(Keyword(termo=termo, tipo=tipo, mercado=market,
                                     sinal_esperado=sinal, ativo=ativo))
                 inserted += 1
             elif (kw.mercado, kw.sinal_esperado, kw.ativo) != (market, sinal, ativo):
@@ -46,8 +57,8 @@ def seed(session=None) -> dict:
                 updated += 1
 
         # desativa (preserva histórico) as que não estão mais no config
-        for kw in session.query(Keyword).filter_by(tipo="hashtag").all():
-            if kw.termo not in desired and kw.ativo:
+        for kw in session.query(Keyword).filter(Keyword.tipo.in_(["hashtag", "meta_query"])).all():
+            if (kw.termo, kw.tipo) not in desired and kw.ativo:
                 kw.ativo = False
                 deactivated += 1
 

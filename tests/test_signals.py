@@ -3,6 +3,7 @@ from app.schemas import SearchItem, SearchStats
 from app.signals import (
     caption_seller_score,
     classify_signal,
+    classify_signal_meta,
     engagement_norm,
     extract_price,
     final_score,
@@ -10,6 +11,8 @@ from app.signals import (
     is_fisico,
     is_high_ticket,
     lang_allowed,
+    meta_ativo_norm,
+    meta_final_score,
     normalize_score,
     select_level0_relative,
 )
@@ -95,3 +98,20 @@ def test_engagement_e_final_score():
 def test_normalize_score_bounded():
     assert 0 <= normalize_score(5.0, CFG) <= 100
     assert normalize_score(9999.0, CFG) == 100.0
+
+
+def test_meta_ativo_norm_e_final_score():
+    curto = meta_ativo_norm(4, CFG)
+    longo = meta_ativo_norm(30, CFG)
+    assert 0 <= curto < longo <= 100
+    cap = caption_seller_score("Baixe agora, acesso imediato", CFG)
+    f = meta_final_score(27, collation_count=6, cap_score=cap["score"], cfg=CFG)
+    assert 0 <= f <= 100
+    assert f > meta_ativo_norm(27, CFG)  # bônus de colation+CTA soma em cima do tempo ativo
+
+
+def test_classify_signal_meta():
+    cap_zero = {"score": 0.0}
+    assert classify_signal_meta(20, cap_zero, CFG) == "anuncio_confirmado"  # >=15 dias
+    assert classify_signal_meta(5, {"score": 1.5}, CFG) == "vendedor_off_platform"  # curto mas c/ CTA
+    assert classify_signal_meta(5, cap_zero, CFG) == "sem_sinal"
