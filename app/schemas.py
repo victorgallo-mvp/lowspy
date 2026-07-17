@@ -113,6 +113,7 @@ class AdSnapshot(BaseModel):
     link_url: Optional[str] = None
     videos: list = Field(default_factory=list)
     images: list = Field(default_factory=list)
+    cards: list = Field(default_factory=list)  # anúncio carrossel: mídia fica aqui, não em images/videos
 
 
 class AdItem(BaseModel):
@@ -137,7 +138,14 @@ class AdItem(BaseModel):
 
     @property
     def desc(self) -> str:
-        return self.snapshot.body.text or ""
+        t = self.snapshot.body.text or ""
+        if t:
+            return t
+        # anúncio carrossel: sem body no topo, texto vem por card
+        for card in self.snapshot.cards or []:
+            if isinstance(card, dict) and card.get("body"):
+                return card["body"]
+        return ""
 
     @property
     def url(self) -> str:
@@ -145,8 +153,20 @@ class AdItem(BaseModel):
 
     @property
     def dias_ativos(self) -> int:
+        """Tempo de veiculação em dias. `total_active_time` do endpoint de busca vem
+        None na prática (confirmado em live) — calcula de start_date/end_date."""
         try:
-            return int(self.total_active_time)
+            v = int(self.total_active_time)
+            if v > 0:
+                return v
+        except (TypeError, ValueError):
+            pass
+        if not self.start_date:
+            return 0
+        import time
+        end = self.end_date if (self.end_date and not self.is_active) else time.time()
+        try:
+            return max(0, int((float(end) - float(self.start_date)) / 86400))
         except (TypeError, ValueError):
             return 0
 
@@ -159,7 +179,16 @@ class AdItem(BaseModel):
                 return first.get("original_image_url") or first.get("resized_image_url") or ""
         vids = self.snapshot.videos or []
         if vids and isinstance(vids[0], dict):
-            return vids[0].get("video_preview_image_url") or ""
+            u = vids[0].get("video_preview_image_url") or ""
+            if u:
+                return u
+        # anúncio carrossel: mídia fica em cards[], não em images/videos
+        for card in self.snapshot.cards or []:
+            if not isinstance(card, dict):
+                continue
+            u = card.get("original_image_url") or card.get("video_preview_image_url") or card.get("resized_image_url")
+            if u:
+                return u
         return ""
 
 
