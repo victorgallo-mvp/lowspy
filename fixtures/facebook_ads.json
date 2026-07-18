@@ -127,6 +127,48 @@
       },
       "spend": null,
       "reach_estimate": null
+    },
+    {
+      "ad_archive_id": "9100000000000007",
+      "ad_id": null,
+      "page_id": "610000000000001",
+      "page_name": "Ateliê Digital Moldes",
+      "is_active": true,
+      "start_date": 1718000000,
+      "end_date": null,
+      "total_active_time": 20,
+      "collation_count": 1,
+      "publisher_platform": ["FACEBOOK"],
+      "snapshot": {
+        "body": {"text": "Molde digital pronto pra imprimir, apenas R$12,90"},
+        "cta_type": "SHOP_NOW",
+        "images": [{"original_image_url": "https://example.com/img7.jpg", "resized_image_url": "https://example.com/img7_s.jpg"}],
+        "videos": [],
+        "link_url": "https://example.com/checkout7"
+      },
+      "spend": null,
+      "reach_estimate": null
+    },
+    {
+      "ad_archive_id": "9100000000000008",
+      "ad_id": null,
+      "page_id": "610000000000001",
+      "page_name": "Ateliê Digital Moldes",
+      "is_active": true,
+      "start_date": 1718200000,
+      "end_date": null,
+      "total_active_time": 22,
+      "collation_count": 1,
+      "publisher_platform": ["FACEBOOK"],
+      "snapshot": {
+        "body": {"text": "Apostila digital completa em PDF, download imediato"},
+        "cta_type": "SHOP_NOW",
+        "images": [{"original_image_url": "https://example.com/img8.jpg", "resized_image_url": "https://example.com/img8_s.jpg"}],
+        "videos": [],
+        "link_url": "https://example.com/checkout8"
+      },
+      "spend": null,
+      "reach_estimate": null
     }
   ]
 }

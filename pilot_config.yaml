@@ -322,8 +322,13 @@ meta_ads:
                               # sempre — conta de anos não deve dominar o ranking só por ser
                               # antiga; ver meta_ativo_norm)
   max_queries: 40            # cobre as 32 keywords atuais + margem (era 30)
-  max_pages_per_query: 4     # era 2 — Meta é 1 crédito/request, barato escalar
-  target_produtos: 30
+  max_pages_per_query: 10    # era 4 — Meta é 1 crédito/request, barato escalar; página
+                              # funda tende a puxar conta pequena (não domina o topo por
+                              # impressão), mais parecido com o vendedor que o doc quer
+  target_produtos: 50        # era 30 — sobe junto com o pool maior de max_pages_per_query
+  max_ads_por_pagina: 2      # "não repetir": limite de anúncios da MESMA página no resultado
+                              # final (dentro da mesma varredura — diferente de pular_vistos,
+                              # que evita re-achar entre varreduras)
   # Confirmação de formato digital: keyword do PDF (preço, "Kit", "Pack") é genérica
   # demais sozinha — bate em clínica, hotel, revenda física. Só aceita o anúncio se
   # ELE TAMBÉM tiver algum sinal inequívoco de entrega digital (deliberadamente sem

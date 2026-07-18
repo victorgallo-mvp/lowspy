@@ -1,3 +1,5 @@
+from collections import Counter
+
 from app.config import load_config
 from app.models import Comment, CostLog, Keyword, Post, Produto, Run, Score
 from app.pipeline import ranked_products, run_sweep, run_sweep_meta
@@ -78,8 +80,9 @@ def test_pular_vistos_novidade(session):
 def test_run_sweep_meta_usa_dias_ativos_como_demanda(session):
     _seed_keyword_meta(session)
     r = run_sweep_meta(session, CFG, live=False)
-    # fixture: 2 anúncios digitais >=15 dias ativos sobrevivem; 1 curto (4d), 1 físico
-    # (frete/correios), 1 serviço local (harmonização/botox) e 1 sem texto são dropados
+    # fixture: 4 anúncios digitais >=15 dias ativos passam os filtros de conteúdo (3 da
+    # mesma página "Ateliê Digital Moldes" + 1 de outra), mas o limite de 2/página deixa
+    # só 3 sobreviverem; 1 curto (4d), 1 físico, 1 serviço local e 1 sem texto são dropados
     assert r["fonte"] == "meta"
     assert r["curto_dropados"] >= 1
     assert r["fisico_dropados"] >= 1
@@ -88,12 +91,22 @@ def test_run_sweep_meta_usa_dias_ativos_como_demanda(session):
     # distribuição dos descartados por tempo curto (diagnóstico): fixture tem 1 anúncio
     # de 4 dias ativos, então min == mediana == max == 4
     assert r["curto_dias_stats"] == {"min": 4, "mediana": 4, "max": 4}
-    assert r["sobreviventes"] == 2
+    assert r["sobreviventes"] == 3
     produtos = session.query(Produto).filter(Produto.mercado.like("meta_%")).all()
-    assert len(produtos) == 2
+    assert len(produtos) == 3
     posts = {p.post_id: session.get(Post, p.post_id) for p in produtos}
     assert all(post.fonte == "meta" for post in posts.values())
     assert all(post.total_active_time >= 15 for post in posts.values())
+
+
+def test_run_sweep_meta_nao_repete_pagina_alem_do_limite(session):
+    _seed_keyword_meta(session)
+    run_sweep_meta(session, CFG, live=False)
+    produtos = session.query(Produto).filter(Produto.mercado.like("meta_%")).all()
+    posts = [session.get(Post, p.post_id) for p in produtos]
+    por_pagina = Counter(p.author_id for p in posts)  # author_id carrega page_id no Meta
+    assert por_pagina["610000000000001"] == 2  # "Ateliê Digital Moldes" tinha 3 válidos, capado em 2
+    assert max(por_pagina.values()) <= 2
 
 
 def test_run_sweep_meta_idempotente(session):

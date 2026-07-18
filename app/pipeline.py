@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+from collections import Counter
 from datetime import datetime, timezone
 from typing import Any, Optional
 
@@ -239,7 +240,6 @@ def run_sweep(session, cfg: dict, live: bool,
         session.commit()
 
         # Dedup por autor + ordena por VIEWS (os mais virais primeiro)
-        from collections import Counter
         author_count: Counter = Counter()
         max_per_author = cfg["caps"].get("max_posts_per_author", 2)
         candidates: list = []
@@ -426,12 +426,23 @@ def run_sweep_meta(session, cfg: dict, live: bool, run_id: Optional[int] = None)
         # Sem fetch pago extra: ordena por score_final (tempo ativo + CTA + variações),
         # não por dias_ativos cru — senão conta antiga de anos sempre vence só por idade.
         caps_by_id = {it.id: caption_seller_score(it.desc, cfg) for it in n0_by_id.values()}
-        candidates = sorted(
+        ranked = sorted(
             n0_by_id.values(),
             key=lambda it: meta_final_score(it.dias_ativos, it.collation_count,
                                             caps_by_id[it.id]["score"], cfg),
             reverse=True,
         )
+
+        # "não repetir": limite de anúncios da MESMA página no resultado final (dentro
+        # da mesma varredura — diferente de pular_vistos, que evita re-achar entre runs)
+        max_per_pagina = m.get("max_ads_por_pagina", 2)
+        page_count: Counter = Counter()
+        candidates: list = []
+        for it in ranked:
+            if page_count[it.page_id] >= max_per_pagina:
+                continue
+            page_count[it.page_id] += 1
+            candidates.append(it)
 
         survivors = 0
         novos = 0
