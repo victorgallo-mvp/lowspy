@@ -22,6 +22,7 @@ from .signals import (
     caption_seller_score,
     classify_signal,
     classify_signal_meta,
+    detect_idioma,
     extract_price,
     final_score,
     intent_score,
@@ -68,6 +69,7 @@ def upsert_post(session, item, market: str) -> Post:
     if item.cover_url:
         post.cover_url = item.cover_url
     post.descricao = item.desc
+    post.idioma = detect_idioma(item.desc)
     post.content_type = item.content_type
     post.create_time = item.ct_int()
     post.region = item.region
@@ -94,6 +96,7 @@ def upsert_post_meta(session, item, market: str) -> Post:
     if item.cover_url:
         post.cover_url = item.cover_url
     post.descricao = item.desc
+    post.idioma = detect_idioma(item.desc)
     post.content_type = "video" if item.snapshot.videos else ("image" if item.snapshot.images else "")
     try:
         post.create_time = int(item.start_date) if item.start_date else None

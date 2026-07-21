@@ -65,6 +65,18 @@ def lang_allowed(text: str) -> bool:
     return True
 
 
+def detect_idioma(text: str) -> str:
+    """Classifica pt vs es/en (best-effort, léxico — não distingue es de en isolado,
+    ambos vêm do mesmo mercado global formato_es_en). Roda só depois de lang_allowed
+    já ter dropado idiomas fora do escopo (id/fr/tr/de/não-latino)."""
+    t = text or ""
+    pt_hits = len(_PT_HINTS.findall(t))
+    nonpt_hits = len(_NONPT_HINTS.findall(t))
+    if nonpt_hits > pt_hits:
+        return "es_en"
+    return "pt"  # padrão: sem sinal claro ou maioria pt (a maior parte do pool é pt)
+
+
 def extract_price(*texts: str):
     for txt in texts:
         m = PRICE_RE.search(txt or "")

@@ -11,6 +11,7 @@ export const API_BASE = resolveBase();
 export type Produto = {
   post_id: string;
   fonte: "tiktok" | "meta";
+  idioma: "pt" | "es_en";
   mercado: string;
   sinal: string;
   novo: boolean;
@@ -44,6 +45,7 @@ export type CustoDia = {
 export type CustoResp = { credit_usd: number; dias: CustoDia[] };
 
 export type Fonte = "tiktok" | "meta" | "all";
+export type Idioma = "pt" | "es_en" | "all";
 
 export type Filtros = {
   min_score?: number;
@@ -55,6 +57,7 @@ export type Filtros = {
   run?: string; // latest | all | <id>
   only_new?: boolean;
   fonte?: Fonte;
+  idioma?: Idioma;
 };
 
 export type Varredura = {
@@ -77,6 +80,7 @@ export async function getProdutos(f: Filtros): Promise<ProdutosResp> {
   q.set("run", f.run ?? "latest");
   q.set("limit", String(f.limit ?? 60));
   q.set("fonte", f.fonte ?? "all");
+  q.set("idioma", f.idioma ?? "pt");
   const r = await fetch(`${API_BASE}/produtos?${q.toString()}`, { cache: "no-store" });
   if (!r.ok) throw new Error(`API ${r.status}`);
   return r.json();

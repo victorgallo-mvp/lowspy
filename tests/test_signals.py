@@ -4,6 +4,7 @@ from app.signals import (
     caption_seller_score,
     classify_signal,
     classify_signal_meta,
+    detect_idioma,
     engagement_norm,
     extract_price,
     final_score,
@@ -38,6 +39,13 @@ def test_lang_allowed_pt_es_en():
     assert lang_allowed("editable canva template, link in bio") is True    # inglês OK
     assert lang_allowed("hi semua template terbaru murah untuk kalian") is False  # indonésio
     assert lang_allowed("бесплатно скачать шаблон") is False  # não-latino
+
+
+def test_detect_idioma():
+    assert detect_idioma("Planilha completa, você acesse o link na bio, compre agora") == "pt"
+    assert detect_idioma("Plantilla editable, tienes que ganar dinero, aquí está el link") == "es_en"
+    assert detect_idioma("The best template, link in bio, how to get your money") == "es_en"
+    assert detect_idioma("") == "pt"  # sem sinal claro: default pt (maioria do pool)
 
 
 def test_intent_score_weights_and_density():

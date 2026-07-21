@@ -75,6 +75,7 @@ function Row({ p, i }: { p: Produto; i: number }) {
             {isMeta ? "Meta Ads" : "TikTok"}
           </span>
           {p.novo && <span className="badge novo">novo</span>}
+          {p.idioma === "es_en" && <span className="badge mkt">ES/EN</span>}
           {isMeta && p.meta?.pagina && <span className="badge mkt">{p.meta.pagina}</span>}
           {!isMeta && p.nicho && <span className="badge mkt">{p.nicho}</span>}
           {p.preco && (
@@ -153,7 +154,9 @@ function Row({ p, i }: { p: Produto; i: number }) {
 
 export default function Dashboard() {
   const [fonte, setFonte] = useState<"tiktok" | "meta">("tiktok");
-  const [f, setF] = useState<Filtros>({ limit: 60, run: "latest", only_new: false, fonte: "tiktok" });
+  const [f, setF] = useState<Filtros>({
+    limit: 60, run: "latest", only_new: false, fonte: "tiktok", idioma: "pt",
+  });
   const [data, setData] = useState<ProdutosResp | null>(null);
   const [custo, setCusto] = useState<CustoResp | null>(null);
   const [varreduras, setVarreduras] = useState<Varredura[]>([]);
@@ -358,6 +361,14 @@ export default function Dashboard() {
             onChange={(e) => set({ only_new: e.target.checked })}
           />
           só novos
+        </label>
+        <label className="onlynew" title="por padrão só mostra português — marque pra incluir espanhol/inglês">
+          <input
+            type="checkbox"
+            checked={(f.idioma ?? "pt") === "all"}
+            onChange={(e) => set({ idioma: e.target.checked ? "all" : "pt" })}
+          />
+          incluir ES/EN
         </label>
         <span className="runcount">
           {loading ? "carregando…" : <><b>{data?.total ?? 0}</b> produtos</>}

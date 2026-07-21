@@ -35,6 +35,24 @@ def test_listar_produtos_ordena_por_views(session):
     assert "comentarios_intencao" in body["produtos"][0]
 
 
+def test_produtos_filtra_por_idioma_default_pt(session):
+    _seed_and_sweep(session)
+    # todos os posts da fixture dry-run são pt: default idioma=pt não esconde nada
+    assert client.get("/produtos").json()["total"] >= 1
+    # marca um post como es_en manualmente e confirma que o filtro default o esconde
+    from app.db import SessionLocal
+    from app.models import Post
+    s2 = SessionLocal()
+    post = s2.query(Post).first()
+    post.idioma = "es_en"
+    s2.commit()
+    s2.close()
+    ids_pt = {p["post_id"] for p in client.get("/produtos?idioma=pt").json()["produtos"]}
+    ids_all = {p["post_id"] for p in client.get("/produtos?idioma=all").json()["produtos"]}
+    assert post.id not in ids_pt
+    assert post.id in ids_all
+
+
 def test_detalhe_404(session):
     _seed_and_sweep(session)
     assert client.get("/produtos/nao_existe").status_code == 404

@@ -55,6 +55,7 @@ def _serialize(pr: Produto, post: Post, sc: Score) -> dict:
     base = {
         "post_id": post.id,
         "fonte": post.fonte,
+        "idioma": post.idioma,
         "mercado": pr.mercado,
         "sinal": pr.sinal,
         "novo": bool(pr.novo),
@@ -120,6 +121,7 @@ def listar_produtos(
     only_new: bool = Query(False, description="só produtos novos (não vistos antes)"),
     sort: str = Query("views", description="views (viralização) | score"),
     fonte: str = Query("all", description="tiktok | meta | all"),
+    idioma: str = Query("pt", description="pt | es_en | all — padrão pt-br"),
 ):
     q = (
         select(Produto, Post, Score)
@@ -129,6 +131,8 @@ def listar_produtos(
     )
     if fonte != "all":
         q = q.where(Post.fonte == fonte)
+    if idioma != "all":
+        q = q.where(Post.idioma == idioma)
     if only_new:
         q = q.where(Produto.novo == True)  # noqa: E712
     # filtros de engajamento (a régua é do operador)

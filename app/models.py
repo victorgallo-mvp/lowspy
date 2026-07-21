@@ -43,6 +43,7 @@ class Post(Base):
 
     id = Column(String(40), primary_key=True)  # aweme_id (tiktok) | ad_archive_id (meta)
     fonte = Column(String(10), nullable=False, default="tiktok")  # tiktok | meta
+    idioma = Column(String(8), nullable=False, default="pt")  # pt | es_en
     url = Column(Text, nullable=False)
     cover_url = Column(Text, nullable=True)  # capa do TikTok p/ preview (pode expirar)
     descricao = Column(Text, default="")
