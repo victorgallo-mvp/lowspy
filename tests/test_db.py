@@ -17,7 +17,8 @@ def _fake_inspector(missing_col="idioma"):
     insp = MagicMock()
     insp.get_table_names.return_value = ["posts", "produtos", "scores", "runs"]
     all_cols = {
-        "posts": ["id", "cover_url", "fonte", "total_active_time", "collation_count", "is_active", "idioma"],
+        "posts": ["id", "cover_url", "fonte", "total_active_time", "collation_count", "is_active",
+                  "idioma", "termo_origem", "anunciante_total_ads", "anunciante_tem_mais_ads"],
         "produtos": ["id", "run_id", "novo"],
         "scores": ["id", "engaj_score", "dias_ativos"],
         "runs": ["id", "fonte"],

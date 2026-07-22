@@ -53,13 +53,16 @@ class Post(Base):
     author_id = Column(String(120), default="")   # tiktok: author_id  | meta: page_id
     author_nick = Column(String(120), default="")  # tiktok: nickname   | meta: page_name
     market = Column(String(60), default="")
+    termo_origem = Column(String(120), default="")  # palavra-chave exata que achou o post
     digg_count = Column(Integer, default=0)
     comment_count = Column(Integer, default=0)
     play_count = Column(Integer, default=0)
     share_count = Column(Integer, default=0)
     total_active_time = Column(Integer, nullable=True)  # meta: dias de veiculação
-    collation_count = Column(Integer, nullable=True)     # meta: nº de variações do anúncio
+    collation_count = Column(Integer, nullable=True)     # meta: nº de variações desse anúncio
     is_active = Column(Boolean, nullable=True)           # meta: anúncio ainda ativo?
+    anunciante_total_ads = Column(Integer, nullable=True)      # meta: total de anúncios ativos da página
+    anunciante_tem_mais_ads = Column(Boolean, nullable=True)   # meta: contagem é piso, não exata
     first_seen = Column(DateTime, server_default=func.now())
     last_seen = Column(DateTime, server_default=func.now(), onupdate=func.now())
     processed_at = Column(DateTime, nullable=True)  # N1 concluído (dedup de fetch)

@@ -111,14 +111,26 @@ def test_run_sweep_respeita_max_keywords_da_keyword_livre(session):
     assert r["requests"]["search_top"] == 2  # das 3 ativas, só 2 (teto) foram buscadas
 
 
+def test_run_sweep_grava_termo_origem(session):
+    session.add(Keyword(termo="apostila", tipo="hashtag", mercado="formato_digital",
+                        sinal_esperado="vendedor", ativo=True))
+    session.commit()
+    run_sweep(session, CFG, live=False)
+    produtos = session.query(Produto).all()
+    assert produtos
+    posts = [session.get(Post, p.post_id) for p in produtos]
+    assert all(post.termo_origem == "apostila" for post in posts)
+
+
 def test_run_sweep_meta_usa_dias_ativos_como_demanda(session):
     _seed_keyword_meta(session)
     r = run_sweep_meta(session, CFG, live=False)
-    # fixture: 4 anúncios digitais >=15 dias ativos passam os filtros de conteúdo (3 da
-    # mesma página "Ateliê Digital Moldes" + 1 de outra), mas o limite de 2/página deixa
-    # só 3 sobreviverem; 1 curto (4d), 1 físico, 1 serviço local e 1 sem texto são dropados
+    # fixture: itens 7/8 (20/22d, página "Ateliê Digital Moldes") + item 3 (21d, outra
+    # página) ficam dentro da banda 10-25; item 1 (27d) agora é dropado por passar do
+    # teto; item 2 (4d) é curto; item 4 é físico; item 5 é serviço local; item 6 sem texto
     assert r["fonte"] == "meta"
     assert r["curto_dropados"] >= 1
+    assert r["longo_dropados"] >= 1  # item de 27 dias — acima do teto da banda (25)
     assert r["fisico_dropados"] >= 1
     assert r["servico_local_dropados"] >= 1
     assert r["sem_texto_dropados"] >= 1
@@ -130,7 +142,18 @@ def test_run_sweep_meta_usa_dias_ativos_como_demanda(session):
     assert len(produtos) == 3
     posts = {p.post_id: session.get(Post, p.post_id) for p in produtos}
     assert all(post.fonte == "meta" for post in posts.values())
-    assert all(post.total_active_time >= 15 for post in posts.values())
+    assert all(10 <= post.total_active_time <= 25 for post in posts.values())
+
+
+def test_run_sweep_meta_conta_anuncios_do_anunciante(session):
+    _seed_keyword_meta(session)
+    r = run_sweep_meta(session, CFG, live=False)
+    produtos = session.query(Produto).filter(Produto.mercado.like("meta_%")).all()
+    posts = [session.get(Post, p.post_id) for p in produtos]
+    # todos os sobreviventes ganham a contagem (opção completa: 1 request por anunciante)
+    assert all(post.anunciante_total_ads is not None for post in posts)
+    # 2 sobreviventes são da mesma página ("Ateliê Digital Moldes") — só 1 request, cacheado
+    assert r["requests"]["company_ads_count"] == 2  # 2 páginas distintas entre os 3 sobreviventes
 
 
 def test_run_sweep_meta_nao_repete_pagina_alem_do_limite(session):

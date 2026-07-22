@@ -13,6 +13,7 @@ export type Produto = {
   fonte: "tiktok" | "meta";
   idioma: "pt" | "es_en";
   mercado: string;
+  termo_origem: string;
   sinal: string;
   novo: boolean;
   score: number;
@@ -22,7 +23,14 @@ export type Produto = {
   url: string;
   cover_url: string | null;
   engajamento?: { curtidas: number; comentarios: number; views: number };
-  meta?: { pagina: string; dias_ativos: number; variacoes_ativas: number; ativo: boolean };
+  meta?: {
+    pagina: string;
+    dias_ativos: number;
+    variacoes_ativas: number;
+    ativo: boolean;
+    total_anuncios_anunciante: number | null;
+    tem_mais_anuncios: boolean;
+  };
   score_componentes: {
     comment_score?: number;
     caption_score: number;
@@ -136,6 +144,32 @@ export async function triggerSweep(
 export async function getRun(id: number): Promise<Run> {
   const r = await fetch(`${API_BASE}/varredura/${id}`, { cache: "no-store" });
   if (!r.ok) throw new Error(`API ${r.status}`);
+  return r.json();
+}
+
+export type Reverso = {
+  url: string;
+  legenda: string;
+  hashtags_encontradas: string[];
+  preco_detectado: string | null;
+  autor: string;
+  engajamento: { views: number; curtidas: number; comentarios: number };
+  comentarios_lidos: number;
+  n_comentarios_intencao: number;
+  comentarios_intencao: string[];
+  sinal_legenda: string[];
+  creditos_gastos: number | null;
+};
+
+export async function analisarLinkTiktok(url: string, token?: string): Promise<Reverso> {
+  const r = await fetch(`${API_BASE}/reverso/tiktok?url=${encodeURIComponent(url)}`, {
+    headers: token ? { "X-API-Token": token } : {},
+  });
+  if (!r.ok) {
+    if (r.status === 401) throw new TriggerError(401);
+    const body = await r.json().catch(() => null);
+    throw new Error(body?.detail || `API ${r.status}`);
+  }
   return r.json();
 }
 

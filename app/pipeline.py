@@ -76,6 +76,7 @@ def upsert_post(session, item, market: str) -> Post:
     post.author_id = item.author_id
     post.author_nick = item.author_nick
     post.market = market
+    post.termo_origem = item.termo_origem
     post.digg_count = item.statistics.digg_count
     post.comment_count = item.statistics.comment_count
     post.play_count = item.statistics.play_count
@@ -105,6 +106,7 @@ def upsert_post_meta(session, item, market: str) -> Post:
     post.author_id = item.page_id
     post.author_nick = item.page_name
     post.market = market
+    post.termo_origem = item.termo_origem
     post.total_active_time = item.dias_ativos
     post.collation_count = item.collation_count
     post.is_active = item.is_active
@@ -251,6 +253,7 @@ def run_sweep(session, cfg: dict, live: bool,
                             continue
                     it.market = kw.mercado
                     it.sinal_esperado = kw.sinal_esperado
+                    it.termo_origem = kw.termo
                     it.novo = it.id not in existing_ids  # NOVIDADE
                     if pular_vistos and not it.novo:  # novidade na fonte: pula já visto
                         vistos_pulados += 1
@@ -375,6 +378,7 @@ def run_sweep_meta(session, cfg: dict, live: bool, run_id: Optional[int] = None)
     max_queries = m.get("max_queries", 30)
     max_pages = m.get("max_pages_per_query", 2)
     dias_min = m.get("dias_ativos_min", 15)
+    dias_max = m.get("dias_ativos_max")  # banda: fora de [dias_min, dias_max] descarta
     target = m.get("target_produtos", 30)
     pular_vistos = cfg.get("discovery", {}).get("pular_vistos", False)
 
@@ -397,6 +401,7 @@ def run_sweep_meta(session, cfg: dict, live: bool, run_id: Optional[int] = None)
     highticket_dropped = 0
     nao_digital_dropped = 0  # bateu a keyword (preço/"Kit") mas não confirma ser digital
     curto_dropped = 0  # dias_ativos < dias_ativos_min
+    longo_dropped = 0  # dias_ativos > dias_ativos_max (banda travada, pedido do operador)
     curto_dias: list[int] = []  # distribuição dos descartados (diagnóstico: threshold certo?)
     vistos_pulados = 0
     n0_by_id: dict[str, Any] = {}
@@ -435,8 +440,12 @@ def run_sweep_meta(session, cfg: dict, live: bool, run_id: Optional[int] = None)
                         curto_dropped += 1
                         curto_dias.append(it.dias_ativos)
                         continue
+                    if dias_max and it.dias_ativos > dias_max:  # banda travada: velho demais
+                        longo_dropped += 1
+                        continue
                     it.market = kw.mercado
                     it.sinal_esperado = kw.sinal_esperado
+                    it.termo_origem = kw.termo
                     it.novo = it.id not in existing_ids
                     if pular_vistos and not it.novo:
                         vistos_pulados += 1
@@ -473,6 +482,7 @@ def run_sweep_meta(session, cfg: dict, live: bool, run_id: Optional[int] = None)
 
         survivors = 0
         novos = 0
+        ads_count_cache: dict[str, tuple[int, bool]] = {}  # 1 chamada por página/anunciante no run
         for it in candidates:
             if survivors >= target:
                 break
@@ -483,6 +493,15 @@ def run_sweep_meta(session, cfg: dict, live: bool, run_id: Optional[int] = None)
             post = session.get(Post, it.id)
             post.processed_at = datetime.now(timezone.utc)
             if sinal != "sem_sinal":
+                # total de anúncios ativos do anunciante — só pros que viram produto
+                # (contagem "opção completa": 1 crédito extra por anunciante, deduplicado)
+                if it.page_id not in ads_count_cache:
+                    try:
+                        ads_count_cache[it.page_id] = client.company_ads_count(it.page_id, cfg)
+                    except Exception as e:
+                        LOG.error("Contagem de anúncios falhou p/ %s: %s", it.page_id, e)
+                        ads_count_cache[it.page_id] = (None, None)
+                post.anunciante_total_ads, post.anunciante_tem_mais_ads = ads_count_cache[it.page_id]
                 upsert_produto(session, post, score_val, sinal, extract_price(it.desc),
                                run_id, novo=it.novo)
                 survivors += 1
@@ -519,6 +538,7 @@ def run_sweep_meta(session, cfg: dict, live: bool, run_id: Optional[int] = None)
         "highticket_dropados": highticket_dropped,
         "nao_digital_dropados": nao_digital_dropped,
         "curto_dropados": curto_dropped,
+        "longo_dropados": longo_dropped,  # banda travada: dias_ativos > dias_ativos_max
         "curto_dias_stats": curto_dias_stats,  # diagnóstico: threshold errado ou pool é assim mesmo?
         "vistos_pulados": vistos_pulados,
         "n0_posts": len(candidates),

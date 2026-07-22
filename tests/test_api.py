@@ -20,6 +20,23 @@ def test_health():
     assert client.get("/health").json() == {"ok": True}
 
 
+def test_reverso_tiktok_extrai_hashtags_preco_e_intencao(session):
+    r = client.get("/reverso/tiktok?url=https://tiktok.com/@x/video/123&dry=true")
+    assert r.status_code == 200
+    body = r.json()
+    assert "apostila" in body["hashtags_encontradas"]
+    assert body["preco_detectado"]
+    assert body["n_comentarios_intencao"] >= 1
+    assert body["creditos_gastos"] >= 1
+    # LGPD: comentário só com texto, sem nickname/uid
+    assert isinstance(body["comentarios_intencao"], list)
+
+
+def test_reverso_tiktok_exige_url(session):
+    r = client.get("/reverso/tiktok?url=  &dry=true")
+    assert r.status_code == 400
+
+
 def test_listar_produtos_ordena_por_views(session):
     _seed_and_sweep(session)
     r = client.get("/produtos?limit=10")  # default sort=views (viralização)

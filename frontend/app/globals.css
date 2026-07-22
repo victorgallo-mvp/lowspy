@@ -226,6 +226,7 @@ body::after {
 .badge.src { font-weight: 700; }
 .badge.src.tiktok { background: var(--black); color: #eef1ec; border-color: var(--black); }
 .badge.src.meta { background: #e7f0ff; color: #1d4ed8; border-color: #c7d9fb; }
+.badge.termo { color: var(--ink-faint); border-style: dashed; text-transform: none; letter-spacing: 0; }
 
 .proof { display: flex; flex-direction: column; gap: 5px; margin-top: 2px; }
 .proof .plabel {
@@ -259,6 +260,39 @@ body::after {
   text-decoration: none; letter-spacing: 0.04em; transition: color 0.15s;
 }
 .linkout:hover { color: var(--green-deep); }
+
+/* ---------------- engenharia reversa ---------------- */
+.reverso {
+  margin-top: 40px; padding-top: 28px; border-top: 1px solid var(--line);
+}
+.reverso h2 {
+  font-family: var(--font-display), sans-serif; font-weight: 700; font-size: 20px;
+  color: var(--ink); margin-bottom: 6px;
+}
+.reversotag { color: var(--ink-dim); font-size: 13px; max-width: 640px; margin-bottom: 16px; }
+.reversoform { display: flex; gap: 10px; margin-bottom: 16px; }
+.reversoform input {
+  flex: 1; background: #fff; color: var(--ink); border: 1px solid var(--line); border-radius: var(--r);
+  padding: 11px 14px; font-family: var(--font-mono), monospace; font-size: 13px; outline: none;
+  transition: border-color 0.15s;
+}
+.reversoform input:focus { border-color: var(--green); }
+.reversoresult {
+  border: 1px solid var(--line); border-radius: var(--r); background: #fff; padding: 20px;
+  box-shadow: var(--shadow); animation: fadeUp 0.4s both;
+}
+.rlegenda {
+  font-family: var(--font-display), sans-serif; font-size: 15px; color: var(--ink);
+  margin-bottom: 16px; line-height: 1.4;
+}
+.rgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+.rgrid > div:last-child { grid-column: 1 / -1; }
+.rgrid .plabel { display: block; margin-bottom: 6px; }
+.rempty { color: var(--ink-faint); font-size: 13px; font-style: italic; }
+.rcost {
+  margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--line-soft);
+  font-family: var(--font-mono), monospace; font-size: 11px; color: var(--ink-faint);
+}
 
 /* states */
 .state {

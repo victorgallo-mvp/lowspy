@@ -6,6 +6,7 @@ from app.signals import (
     classify_signal_meta,
     detect_idioma,
     engagement_norm,
+    extract_hashtags,
     extract_price,
     final_score,
     intent_score,
@@ -31,6 +32,12 @@ def test_extract_price():
     assert extract_price("por apenas R$10") == "R$10"
     assert extract_price("só 10 reais hoje") == "10 reais"
     assert extract_price("sem preço aqui") is None
+
+
+def test_extract_hashtags():
+    assert extract_hashtags("Apostila #digital #molde2024 legal") == ["digital", "molde2024"]
+    assert extract_hashtags("sem hashtag nenhuma aqui") == []
+    assert extract_hashtags("") == []
 
 
 def test_lang_allowed_pt_es_en():

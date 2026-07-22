@@ -8,7 +8,7 @@ from __future__ import annotations
 import os
 from collections import defaultdict
 from contextlib import asynccontextmanager
-from typing import Optional
+from typing import Any, Optional
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
@@ -17,6 +17,9 @@ from sqlalchemy import func, select
 from . import config, jobs
 from .db import SessionLocal, init_db
 from .models import CostLog, Post, Produto, Run, Score
+from .pipeline import DBCost
+from .scrapecreators import DryRunClient, LiveClient
+from .signals import caption_seller_score, extract_hashtags, extract_price, intent_score
 
 
 @asynccontextmanager
@@ -57,6 +60,7 @@ def _serialize(pr: Produto, post: Post, sc: Score) -> dict:
         "fonte": post.fonte,
         "idioma": post.idioma,
         "mercado": pr.mercado,
+        "termo_origem": post.termo_origem,
         "sinal": pr.sinal,
         "novo": bool(pr.novo),
         "score": pr.score_final,
@@ -72,6 +76,8 @@ def _serialize(pr: Produto, post: Post, sc: Score) -> dict:
             "dias_ativos": post.total_active_time,
             "variacoes_ativas": post.collation_count,
             "ativo": bool(post.is_active),
+            "total_anuncios_anunciante": post.anunciante_total_ads,
+            "tem_mais_anuncios": bool(post.anunciante_tem_mais_ads),
         }
         base["score_componentes"] = {
             "caption_score": sc.caption_score,
@@ -214,6 +220,70 @@ def _require_token(x_api_token: Optional[str]) -> None:
     """Protege o disparo pago. Sem TRIGGER_TOKEN setado (dev) = liberado."""
     if config.TRIGGER_TOKEN and x_api_token != config.TRIGGER_TOKEN:
         raise HTTPException(status_code=401, detail="token inválido")
+
+
+# --------------------------------------------------------------------------- #
+# Engenharia reversa: cola o link de um produto validado, vê legenda/hashtags/
+# comentários — só análise, não escreve em posts/produtos (decide depois como
+# aproveitar isso no sistema).
+# --------------------------------------------------------------------------- #
+@app.get("/reverso/tiktok")
+def reverso_tiktok(
+    url: str = Query(..., description="link do vídeo do TikTok"),
+    dry: bool = Query(False, description="true = dry-run (fixture, gasto zero)"),
+    db=Depends(get_db),
+    x_api_token: Optional[str] = Header(None),
+):
+    _require_token(x_api_token)
+    url = url.strip()
+    if not url:
+        raise HTTPException(status_code=400, detail="url obrigatória")
+
+    cfg = config.load_config()
+    cost = DBCost(db)
+    client: Any
+    if dry:
+        client = DryRunClient(cost.record)
+    else:
+        if not config.SCRAPECREATORS_API_KEY:
+            raise HTTPException(status_code=500, detail="SCRAPECREATORS_API_KEY não configurada")
+        client = LiveClient(config.SCRAPECREATORS_API_KEY, cost.record)
+    try:
+        aweme = client.video_info(url)
+        if not aweme:
+            raise HTTPException(status_code=404, detail="vídeo não encontrado")
+        try:
+            comments = client.video_comments(url)
+        except Exception:
+            comments = []  # legenda ainda vale mesmo sem comentário
+    finally:
+        client.close()
+    db.commit()  # persiste o CostLog
+
+    desc = aweme.get("desc", "") or ""
+    stats = aweme.get("statistics", {}) or {}
+    author = aweme.get("author", {}) or {}
+    texts = [c.text for c in comments if c.text]
+    intent = intent_score(texts, desc, cfg)
+    cap = caption_seller_score(desc, cfg)
+
+    return {
+        "url": url,
+        "legenda": desc,
+        "hashtags_encontradas": extract_hashtags(desc),
+        "preco_detectado": extract_price(desc, *texts),
+        "autor": author.get("nickname") or author.get("unique_id") or "",
+        "engajamento": {
+            "views": stats.get("play_count", 0),
+            "curtidas": stats.get("digg_count", 0),
+            "comentarios": stats.get("comment_count", 0),
+        },
+        "comentarios_lidos": len(texts),
+        "n_comentarios_intencao": intent["n_comentarios_intencao"],
+        "comentarios_intencao": intent["matched_comments"][:8],  # LGPD: só texto
+        "sinal_legenda": cap["hits"],
+        "creditos_gastos": cost.total_credits(),
+    }
 
 
 def _run_dict(run: Run) -> dict:

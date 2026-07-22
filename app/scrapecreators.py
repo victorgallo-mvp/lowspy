@@ -85,6 +85,13 @@ class LiveClient:
         self.on_call("video_comments", data.get("credits_remaining"), {"url": url})
         return [CommentSchema.model_validate(c) for c in data.get("comments", [])]
 
+    def video_info(self, url: str) -> dict:
+        """Engenharia reversa: dados de UM vídeo específico por link (legenda,
+        hashtags, estatísticas) — não tem endpoint 'por hashtag', é o vídeo em si."""
+        data = self._get("/v2/tiktok/video", {"url": url})
+        self.on_call("video_info", data.get("credits_remaining"), {"url": url})
+        return data.get("aweme_detail", {}) or {}
+
     def search_facebook_ads(self, query: str, cfg: dict, cursor=None):
         m = cfg.get("meta_ads", {})
         params: dict = {
@@ -101,6 +108,18 @@ class LiveClient:
         items = [facebook_ad_to_item(a) for a in data.get("searchResults", [])]
         return items, data.get("cursor")  # (items, next_cursor)
 
+    def company_ads_count(self, page_id: str, cfg: dict) -> tuple[int, bool]:
+        """Quantos anúncios ATIVOS aquela página tem — 1 request, só 1ª página (não
+        pagina o catálogo inteiro, custaria 1 crédito por página de anúncio do anunciante).
+        Retorna (contagem_dessa_página, tem_mais) — "tem_mais" avisa quando o número é
+        piso, não total exato (a página tinha mais resultados que não buscamos)."""
+        m = cfg.get("meta_ads", {})
+        params = {"pageId": page_id, "country": m.get("country", "BR"), "status": "ACTIVE"}
+        data = self._get("/v1/facebook/adLibrary/company/ads", params)
+        self.on_call("company_ads_count", data.get("credits_remaining"), {"pageId": page_id})
+        results = data.get("results", [])
+        return len(results), bool(data.get("cursor"))
+
     def close(self) -> None:
         self._c.close()
 
@@ -114,6 +133,7 @@ class DryRunClient:
         self._top = json.loads((d / "top_search.json").read_text("utf-8"))
         self._comments = json.loads((d / "comments.json").read_text("utf-8"))
         self._meta_ads = json.loads((d / "facebook_ads.json").read_text("utf-8"))
+        self._video_info = json.loads((d / "video_info.json").read_text("utf-8"))
         self._credits = int(self._top.get("credits_remaining", 1000))
 
     def _spend(self, endpoint: str, params: dict) -> None:
@@ -140,10 +160,19 @@ class DryRunClient:
         self._spend("video_comments", {"url": url})
         return [CommentSchema.model_validate(c) for c in self._comments.get("comments", [])]
 
+    def video_info(self, url: str) -> dict:
+        self._spend("video_info", {"url": url})
+        return self._video_info.get("aweme_detail", {}) or {}
+
     def search_facebook_ads(self, query: str, cfg: dict, cursor=None):
         self._spend("search_facebook_ads", {"query": query, "cursor": cursor})
         items = [facebook_ad_to_item(a) for a in self._meta_ads.get("searchResults", [])]
         return items, None  # dry-run: página única
+
+    def company_ads_count(self, page_id: str, cfg: dict) -> tuple[int, bool]:
+        self._spend("company_ads_count", {"pageId": page_id})
+        n = sum(1 for a in self._meta_ads.get("searchResults", []) if a.get("page_id") == page_id)
+        return n, False
 
     def close(self) -> None:
         pass

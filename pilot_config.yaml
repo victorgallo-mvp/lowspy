@@ -174,6 +174,15 @@ discovery:
       - "atividades"
       - "modeloseditaveis"
       - "mapamental"
+      # Adicionadas depois (não vêm do doc original, pedido direto do operador)
+      - "dinamicas"
+      - "exercicios"
+      - "ilustrado"
+      - "ilustradas"
+      - "editavel"
+      - "editaveis"
+      - "imprimir"
+      - "impressos"
     # Formato criativo/editável
     formato_criativo:
       - "templatecanva"
@@ -333,15 +342,14 @@ meta_ads:
   media_type: "ALL"          # era só VIDEO — 99.9% do pool elegível morria no filtro de 15
                               # dias; infoproduto low-ticket é majoritariamente imagem/carrossel
   status: "ACTIVE"           # só anúncio ativo agora
-  dias_ativos_min: 15        # doc: "Mais de 15 dias ativos"
-  dias_ativos_ideal_max: 30  # doc: faixa recomendada 15-30 dias — também é o teto de
-                              # normalização do tempo ativo (satura aqui, não cresce pra
-                              # sempre — conta de anos não deve dominar o ranking só por ser
-                              # antiga; ver meta_ativo_norm)
-  max_queries: 40            # cobre as 32 keywords atuais + margem (era 30)
-  max_pages_per_query: 10    # era 4 — Meta é 1 crédito/request, barato escalar; página
-                              # funda tende a puxar conta pequena (não domina o topo por
-                              # impressão), mais parecido com o vendedor que o doc quer
+  dias_ativos_min: 10        # era 15 — banda travada 10-25 (pedido do operador, ciente
+                              # que perde resultado bom acima de 25d que já validamos)
+  dias_ativos_max: 25        # novo: teto — fora da banda 10-25 dias, descarta
+  dias_ativos_ideal_max: 25  # acompanha o teto — o score usa toda a banda aceita (10-25)
+                              # pra diferenciar, em vez de saturar num número que nem entra mais
+  max_queries: 45            # cobre as 42 keywords atuais (32 do PDF + 10 extras) + margem
+  max_pages_per_query: 20    # era 10 — banda mais estreita acha menos por página, compensa
+                              # buscando mais fundo (Meta é 1 crédito/request, barato escalar)
   target_produtos: 50        # era 30 — sobe junto com o pool maior de max_pages_per_query
   max_ads_por_pagina: 2      # "não repetir": limite de anúncios da MESMA página no resultado
                               # final (dentro da mesma varredura — diferente de pular_vistos,
@@ -406,3 +414,16 @@ meta_ads:
       - "1000 Atividades"
       - "100 Exercícios"
       - "250 Exercícios"
+    # Adicionadas depois (não vêm do PDF original — separado de propósito, pra manter
+    # claro o que é do doc do operador e o que foi pedido depois)
+    extras:
+      - "Dinâmicas"
+      - "Atividades"
+      - "Exercícios"
+      - "Ilustrado"
+      - "Ilustradas"
+      - "Moldes"
+      - "Editável"
+      - "Editáveis"
+      - "Imprimir"
+      - "Impressos"

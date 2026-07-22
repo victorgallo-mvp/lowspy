@@ -6,8 +6,10 @@ import {
   Filtros,
   Produto,
   ProdutosResp,
+  Reverso,
   TriggerError,
   Varredura,
+  analisarLinkTiktok,
   getCusto,
   getLatestRun,
   getProdutos,
@@ -78,6 +80,7 @@ function Row({ p, i }: { p: Produto; i: number }) {
           {p.idioma === "es_en" && <span className="badge mkt">ES/EN</span>}
           {isMeta && p.meta?.pagina && <span className="badge mkt">{p.meta.pagina}</span>}
           {!isMeta && p.nicho && <span className="badge mkt">{p.nicho}</span>}
+          {p.termo_origem && <span className="badge termo" title="achado buscando por">#{p.termo_origem}</span>}
           {p.preco && (
             <span className="badge price">
               <b>{p.preco}</b>
@@ -89,6 +92,10 @@ function Row({ p, i }: { p: Produto; i: number }) {
           <div className="proof">
             <span className="plabel">
               prova de demanda · sobreviveu {p.meta?.dias_ativos ?? 0} dias ao teste do mercado
+              {p.meta?.total_anuncios_anunciante != null && (
+                <> · anunciante tem {p.meta.total_anuncios_anunciante}
+                  {p.meta.tem_mais_anuncios ? "+" : ""} anúncio(s) ativo(s)</>
+              )}
             </span>
           </div>
         ) : (
@@ -421,6 +428,108 @@ export default function Dashboard() {
           ))}
         </div>
       )}
+
+      <ReversoSection />
     </main>
+  );
+}
+
+function ReversoSection() {
+  const [url, setUrl] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [res, setRes] = useState<Reverso | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  const analisar = useCallback(async () => {
+    if (!url.trim() || loading) return;
+    setLoading(true);
+    setErr(null);
+    setRes(null);
+    const token =
+      typeof window !== "undefined" ? localStorage.getItem("lowspy_token") ?? undefined : undefined;
+    try {
+      const r = await analisarLinkTiktok(url.trim(), token);
+      setRes(r);
+    } catch (e) {
+      if (e instanceof TriggerError && e.code === 401) {
+        const t = window.prompt("Token de disparo (TRIGGER_TOKEN da API):") ?? "";
+        if (!t) { setErr("cancelado (sem token)"); setLoading(false); return; }
+        localStorage.setItem("lowspy_token", t);
+        try {
+          setRes(await analisarLinkTiktok(url.trim(), t));
+        } catch {
+          setErr("token rejeitado");
+        }
+      } else {
+        setErr(e instanceof Error ? e.message : "falha ao analisar o link");
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, [url, loading]);
+
+  return (
+    <section className="reverso">
+      <h2>engenharia reversa</h2>
+      <p className="reversotag">
+        cole o link de um produto que você já validou — o sistema lê a legenda e os
+        comentários e mostra as hashtags e sinais que ele usaria. Só análise: não entra
+        na busca automática sozinho.
+      </p>
+      <div className="reversoform">
+        <input
+          type="text"
+          placeholder="https://www.tiktok.com/@usuario/video/123..."
+          value={url}
+          onChange={(e) => setUrl(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && analisar()}
+        />
+        <button className="btn" onClick={analisar} disabled={loading || !url.trim()}>
+          {loading ? "⣾ analisando…" : "◆ analisar"}
+        </button>
+      </div>
+      {err && <div className="state err">erro: {err}</div>}
+      {res && (
+        <div className="reversoresult">
+          <div className="rlegenda">“{res.legenda}”</div>
+          <div className="rgrid">
+            <div>
+              <span className="plabel">hashtags encontradas</span>
+              <div className="badges">
+                {res.hashtags_encontradas.length > 0
+                  ? res.hashtags_encontradas.map((h) => (
+                      <span className="badge termo" key={h}>#{h}</span>
+                    ))
+                  : <span className="rempty">nenhuma</span>}
+              </div>
+            </div>
+            <div>
+              <span className="plabel">preço detectado</span>
+              <div>{res.preco_detectado ?? <span className="rempty">nenhum</span>}</div>
+            </div>
+            <div>
+              <span className="plabel">engajamento</span>
+              <div>
+                {compact(res.engajamento.views)} views · {compact(res.engajamento.curtidas)} curtidas ·{" "}
+                {compact(res.engajamento.comentarios)} comentários
+              </div>
+            </div>
+            <div>
+              <span className="plabel">
+                demanda nos comentários · {res.n_comentarios_intencao}/{res.comentarios_lidos} lidos
+              </span>
+              {res.comentarios_intencao.length > 0 ? (
+                res.comentarios_intencao.map((c, k) => (
+                  <div className="quote" key={k}><b>“{c}”</b></div>
+                ))
+              ) : (
+                <span className="rempty">nenhum comentário de intenção encontrado</span>
+              )}
+            </div>
+          </div>
+          <div className="rcost">{res.creditos_gastos ?? "?"} créditos gastos</div>
+        </div>
+      )}
+    </section>
   );
 }

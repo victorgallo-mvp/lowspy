@@ -26,6 +26,7 @@ class SearchItem(BaseModel):
     cover_url: str = ""
     market: str = ""
     sinal_esperado: str = ""
+    termo_origem: str = ""  # transiente: palavra-chave exata que achou este item
     novo: bool = False  # transiente: 1ª vez visto (não estava no DB antes deste run)
 
     @property
@@ -130,6 +131,7 @@ class AdItem(BaseModel):
     snapshot: AdSnapshot = Field(default_factory=AdSnapshot)
     market: str = ""
     sinal_esperado: str = ""
+    termo_origem: str = ""  # transiente: palavra-chave exata que achou este item
     novo: bool = False  # transiente: 1ª vez visto (não estava no DB antes deste run)
 
     @property

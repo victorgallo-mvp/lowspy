@@ -85,6 +85,14 @@ def extract_price(*texts: str):
     return None
 
 
+_HASHTAG_RE = re.compile(r"#(\w+)", re.UNICODE)
+
+
+def extract_hashtags(text: str) -> list[str]:
+    """Hashtags usadas na legenda (engenharia reversa: qual termo esse post usaria?)."""
+    return _HASHTAG_RE.findall(text or "")
+
+
 def passes_level0_abs(item: SearchItem, cfg: dict) -> bool:
     t = cfg["thresholds"]
     st = item.statistics
