@@ -174,9 +174,15 @@ def run_sweep(session, cfg: dict, live: bool,
     else:
         client = DryRunClient(cost.record)
 
-    keywords = session.execute(
-        select(Keyword).where(Keyword.ativo == True)  # noqa: E712
-    ).scalars().all()[:max_hashtags]
+    active_kws = session.execute(
+        select(Keyword).where(Keyword.ativo == True,  # noqa: E712
+                              Keyword.tipo.in_(["hashtag", "top"]))
+    ).scalars().all()
+    ks_max_keywords = cfg.get("discovery", {}).get("keyword_search", {}).get("max_keywords", 30)
+    keywords = (
+        [k for k in active_kws if k.tipo == "hashtag"][:max_hashtags]
+        + [k for k in active_kws if k.tipo == "top"][:ks_max_keywords]
+    )
 
     import time
 
@@ -191,6 +197,14 @@ def run_sweep(session, cfg: dict, live: bool,
     recency_days = cfg["thresholds"].get("recency_days")
     max_pages = cfg["caps"].get("max_pages_per_hashtag", 1)
     pular_vistos = cfg.get("discovery", {}).get("pular_vistos", False)
+    # Keyword livre (/search/top, tipo != "hashtag"): soma ao modo hashtag, com seus
+    # próprios limites — mais recente, mais páginas, piso de comentário bem mais alto
+    # (canal mais ruidoso; NÃO mexe no piso do hashtag, que já provou preservar nicho).
+    ks_cfg = cfg.get("discovery", {}).get("keyword_search", {})
+    ks_recency_days = ks_cfg.get("recency_days", recency_days)
+    ks_max_pages = ks_cfg.get("max_pages", max_pages)
+    ks_max_items = ks_cfg.get("max_items", 9999)
+    ks_min_comments = ks_cfg.get("abs_min_comments")
     now = time.time()
     # snapshot dos posts que JÁ existem no DB → novidade (visto em run anterior?)
     existing_ids = {r[0] for r in session.execute(select(Post.id)).all()}
@@ -198,22 +212,30 @@ def run_sweep(session, cfg: dict, live: bool,
     try:
         for kw in keywords:
             LOG.info("Busca %s | %s/%s | %r", kw.tipo, kw.mercado, kw.sinal_esperado, kw.termo)
+            is_top = kw.tipo != "hashtag"
+            pages_cap = ks_max_pages if is_top else max_pages
+            kw_recency = ks_recency_days if is_top else recency_days
+            kw_cfg = cfg
+            if is_top and ks_min_comments is not None:
+                kw_cfg = {**cfg, "thresholds": {**cfg["thresholds"], "abs_min_comments": ks_min_comments}}
+            items_this_kw = 0
             cursor = None
-            for _page in range(max_pages):
+            for _page in range(pages_cap):
                 try:
                     if kw.tipo == "hashtag":
                         items, cursor = client.search_hashtag(kw.termo, cursor)
                     else:
-                        items, cursor = client.search_top(kw.termo, cfg), None
+                        items, cursor = client.search_top(kw.termo, cfg, cursor)
                 except Exception as e:  # falha de coleta não derruba o pipeline
                     LOG.error("Busca falhou para %r: %s", kw.termo, e)
                     break
                 total_seen += len(items)
+                items_this_kw += len(items)
                 if require_pt:
                     kept = [it for it in items if lang_allowed(it.desc)]
                     lang_dropped += len(items) - len(kept)
                     items = kept
-                for it in select_level0_relative(items, cfg):
+                for it in select_level0_relative(items, kw_cfg):
                     if not it.id or it.id in n0_by_id:
                         continue  # mantém a 1ª ocorrência
                     if is_fisico(it.desc):  # backstop anti-físico (só digital)
@@ -222,9 +244,9 @@ def run_sweep(session, cfg: dict, live: bool,
                     if is_high_ticket(it.desc, cfg):  # queremos low-ticket
                         highticket_dropped += 1
                         continue
-                    if recency_days:  # recência: mata viral evergreen que ressurge
+                    if kw_recency:  # recência: mata viral evergreen que ressurge
                         ct = it.ct_int()
-                        if ct and (now - float(ct)) > recency_days * 86400:
+                        if ct and (now - float(ct)) > kw_recency * 86400:
                             velho_dropped += 1
                             continue
                     it.market = kw.mercado
@@ -234,8 +256,10 @@ def run_sweep(session, cfg: dict, live: bool,
                         vistos_pulados += 1
                         continue
                     n0_by_id[it.id] = it
-                if kw.tipo != "hashtag" or not cursor:
-                    break  # top não pagina; hashtag sem cursor acabou
+                if not cursor:
+                    break  # sem próxima página
+                if is_top and items_this_kw >= ks_max_items:
+                    break  # teto de itens por keyword livre (o que vier primeiro)
 
         # Upsert dos posts únicos (1 por id) — idempotente
         for it in n0_by_id.values():

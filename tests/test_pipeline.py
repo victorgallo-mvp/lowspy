@@ -77,6 +77,40 @@ def test_pular_vistos_novidade(session):
     assert session.query(Produto).count() == prod_1  # não duplicou
 
 
+def test_run_sweep_usa_search_top_para_keyword_livre(session):
+    session.add(Keyword(termo="planilha", tipo="top", mercado="keyword_livre",
+                        sinal_esperado="vendedor", ativo=True))
+    session.commit()
+    r = run_sweep(session, CFG, live=False)
+    assert r["requests"].get("search_top") == 1
+    assert r["requests"].get("search_hashtag") is None  # só a keyword_livre estava ativa
+    # fixture tem 4 itens (8/87/132/214 comentários); o piso de keyword_search é 100 ->
+    # só os 2 com >=100 comentários entram no funil
+    assert r["n0_posts"] == 2
+
+
+def test_run_sweep_ignora_keyword_meta_query(session):
+    # meta_query é do pipeline do Meta Ads — não pode vazar pro TikTok mesmo se ativa
+    session.add(Keyword(termo="Apenas R$14,90", tipo="meta_query", mercado="meta_precificacao",
+                        sinal_esperado="vendedor", ativo=True))
+    session.commit()
+    r = run_sweep(session, CFG, live=False)
+    assert r["total_buscado"] == 0
+    assert "search_facebook_ads" not in r["requests"]
+
+
+def test_run_sweep_respeita_max_keywords_da_keyword_livre(session):
+    import copy
+    cfg = copy.deepcopy(CFG)
+    cfg["discovery"]["keyword_search"]["max_keywords"] = 2
+    for termo in ["planilha", "molde", "apostila"]:
+        session.add(Keyword(termo=termo, tipo="top", mercado="keyword_livre",
+                            sinal_esperado="vendedor", ativo=True))
+    session.commit()
+    r = run_sweep(session, cfg, live=False)
+    assert r["requests"]["search_top"] == 2  # das 3 ativas, só 2 (teto) foram buscadas
+
+
 def test_run_sweep_meta_usa_dias_ativos_como_demanda(session):
     _seed_keyword_meta(session)
     r = run_sweep_meta(session, CFG, live=False)

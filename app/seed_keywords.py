@@ -46,6 +46,19 @@ def seed(session=None) -> dict:
             for termo in tags:
                 desired[(termo, "meta_query")] = (market, "vendedor", meta_enabled)
 
+        # Keyword livre no TikTok (/search/top, tipo "top"): reaproveita as MESMAS
+        # palavras já usadas — hashtags dos mercados ativos + termos do Meta Ads —
+        # sem lista própria no yaml, pra não duplicar/divergir.
+        ks = disc.get("keyword_search", {})
+        if ks.get("enabled", False):
+            termos_livres: set[str] = set()
+            for market in enabled:
+                termos_livres.update(disc.get("markets", {}).get(market, []))
+            for tags in meta.get("keywords", {}).values():
+                termos_livres.update(tags)
+            for termo in termos_livres:
+                desired[(termo, "top")] = ("keyword_livre", "vendedor", True)
+
         for (termo, tipo), (market, sinal, ativo) in desired.items():
             kw = session.query(Keyword).filter_by(termo=termo, tipo=tipo).first()
             if kw is None:
@@ -57,7 +70,7 @@ def seed(session=None) -> dict:
                 updated += 1
 
         # desativa (preserva histórico) as que não estão mais no config
-        for kw in session.query(Keyword).filter(Keyword.tipo.in_(["hashtag", "meta_query"])).all():
+        for kw in session.query(Keyword).filter(Keyword.tipo.in_(["hashtag", "meta_query", "top"])).all():
             if (kw.termo, kw.tipo) not in desired and kw.ativo:
                 kw.ativo = False
                 deactivated += 1

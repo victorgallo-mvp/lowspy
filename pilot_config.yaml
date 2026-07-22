@@ -193,9 +193,26 @@ discovery:
       - "lojade10"
       - "importados"
 
-# --- Parâmetros da busca /v1/tiktok/search/top (fallback do mode=top) --------
+  # Busca por KEYWORD LIVRE (query direta em /search/top, não hashtag) — soma ao modo
+  # hashtag, não substitui (achado: muito conteúdo válido não usa as hashtags curadas).
+  # Sem lista própria: reaproveita as MESMAS palavras já usadas (hashtags dos mercados
+  # ativos + termos do Meta Ads/PDF) — derivado em seed_keywords.py, não duplicado aqui.
+  keyword_search:
+    enabled: true
+    recency_days: 15       # mais curto que o hashtag (365d) — keyword livre traz
+                            # conteúdo mais solto/genérico, prioriza o mais fresco
+    max_pages: 10
+    max_items: 50           # teto por keyword — o que vier primeiro entre páginas e itens
+    max_keywords: 30        # teto de termos livres buscados por run — as 61 palavras
+                            # derivadas cabem em mais de 1 run (novidade já evita repetir);
+                            # sem isso, 61 termos x 10 páginas explode custo/tempo do run
+    abs_min_comments: 100   # piso bem mais alto que o hashtag (3) — canal mais ruidoso;
+                            # NÃO mexe no piso do hashtag, que já provou preservar nicho pequeno
+
+# --- Parâmetros da busca /v1/tiktok/search/top (usado por keyword_search) ----
 search:
-  publish_time: "this-week"
+  publish_time: "this-month"  # era "this-week" — cobre a janela de 15d+ margem; o corte
+                               # exato vem do filtro client-side (keyword_search.recency_days)
   sort_by: "relevance"        # relevance | most-liked | date-posted
   region: "BR"
 

@@ -59,23 +59,25 @@ class LiveClient:
         items = [hashtag_to_item(a) for a in data.get("aweme_list", [])]
         return items, data.get("cursor")  # (items, next_cursor)
 
-    def search_top(self, query: str, cfg: dict) -> list[SearchItem]:
+    def search_top(self, query: str, cfg: dict, cursor=None):
         s = cfg["search"]
-        params = {
+        params: dict = {
             "query": query,
             "publish_time": s["publish_time"],
             "sort_by": s["sort_by"],
             "region": s["region"],
         }
+        if cursor is not None:
+            params["cursor"] = cursor
         data = self._get("/v1/tiktok/search/top", params)
-        self.on_call("search_top", data.get("credits_remaining"), {"query": query})
+        self.on_call("search_top", data.get("credits_remaining"), {"query": query, "cursor": cursor})
         items = []
         for it in data.get("items", []):
             si = SearchItem.model_validate(it)
             if not si.cover_url:
                 si.cover_url = extract_cover(it)
             items.append(si)
-        return items
+        return items, data.get("cursor")  # (items, next_cursor)
 
     def video_comments(self, url: str) -> list[CommentSchema]:
         # trim=false: trim=true devolve só ~4 comentários-lixo e mata o gate.
@@ -130,9 +132,9 @@ class DryRunClient:
         self._spend("search_hashtag", {"hashtag": hashtag, "cursor": cursor})
         return self._items(), None  # dry-run: página única
 
-    def search_top(self, query: str, cfg: dict) -> list[SearchItem]:
-        self._spend("search_top", {"query": query})
-        return self._items()
+    def search_top(self, query: str, cfg: dict, cursor=None):
+        self._spend("search_top", {"query": query, "cursor": cursor})
+        return self._items(), None  # dry-run: página única
 
     def video_comments(self, url: str) -> list[CommentSchema]:
         self._spend("video_comments", {"url": url})
