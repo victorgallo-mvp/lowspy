@@ -111,6 +111,7 @@ class AdSnapshotBody(BaseModel):
 class AdSnapshot(BaseModel):
     model_config = ConfigDict(extra="ignore")
     body: AdSnapshotBody = Field(default_factory=AdSnapshotBody)
+    title: str = ""  # separado do body — anúncio pode confirmar "é digital" só no título
     link_url: Optional[str] = None
     videos: list = Field(default_factory=list)
     images: list = Field(default_factory=list)
@@ -140,14 +141,17 @@ class AdItem(BaseModel):
 
     @property
     def desc(self) -> str:
-        t = self.snapshot.body.text or ""
-        if t:
-            return t
-        # anúncio carrossel: sem body no topo, texto vem por card
-        for card in self.snapshot.cards or []:
-            if isinstance(card, dict) and card.get("body"):
-                return card["body"]
-        return ""
+        """Título + corpo do anúncio, juntos — alguns só confirmam 'é digital'
+        no título (ex: nome do produto), não no texto principal."""
+        body = self.snapshot.body.text or ""
+        if not body:
+            # anúncio carrossel: sem body no topo, texto vem por card
+            for card in self.snapshot.cards or []:
+                if isinstance(card, dict) and card.get("body"):
+                    body = card["body"]
+                    break
+        titulo = self.snapshot.title or ""
+        return f"{titulo} {body}".strip()
 
     @property
     def url(self) -> str:

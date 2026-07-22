@@ -37,6 +37,37 @@ def test_sweep_dry_run_persists_and_scores(session):
     assert summary["sobreviventes"] >= 1
 
 
+def test_run_sweep_dropa_nao_digital(session):
+    # fixture tem um post de carro usado (sem nenhum termo de confirmacao_digital) —
+    # deve ser descartado mesmo passando no piso de comentário/curtida
+    _seed_keyword(session)
+    r = run_sweep(session, CFG, live=False)
+    assert r["nao_digital_dropados"] >= 1
+    produtos = session.query(Produto).all()
+    posts = [session.get(Post, p.post_id) for p in produtos]
+    assert all("corsa" not in (p.descricao or "").lower() for p in posts)
+
+
+def test_run_sweep_prioriza_termos_da_lista_prioridade(session):
+    import copy
+    cfg = copy.deepcopy(CFG)
+    cfg["discovery"]["prioridade"] = ["zzz_prioritario"]
+    cfg["caps"]["max_hashtags"] = 1  # só 1 vaga — só quem tem prioridade deveria entrar
+    # "existente" foi cadastrado primeiro (id menor); "zzz_prioritario" depois, mas
+    # está na lista de prioridade — precisa vencer mesmo entrando por último no banco
+    session.add(Keyword(termo="existente", tipo="hashtag", mercado="formato_digital",
+                        sinal_esperado="vendedor", ativo=True))
+    session.commit()
+    session.add(Keyword(termo="zzz_prioritario", tipo="hashtag", mercado="formato_digital",
+                        sinal_esperado="vendedor", ativo=True))
+    session.commit()
+    r = run_sweep(session, cfg, live=False)
+    assert r["requests"]["search_hashtag"] == 1  # só 1 keyword buscada (teto=1)
+    # a única CostLog de busca deve ser do termo prioritário, não do "existente"
+    log = session.query(CostLog).filter_by(endpoint="search_hashtag").first()
+    assert log.params["hashtag"] == "zzz_prioritario"
+
+
 def test_sweep_is_idempotent(session):
     _seed_keyword(session)
     run_sweep(session, CFG, live=False)

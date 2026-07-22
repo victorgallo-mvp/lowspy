@@ -151,6 +151,19 @@ discovery:
   # vira uma chamada /search/hashtag. Mercados ligáveis/desligáveis.
   enabled_markets: ["formato_digital", "formato_criativo", "formato_es_en"]  # digital, pt+es+en
   pular_vistos: true   # novidade na fonte: pula posts já vistos em runs anteriores
+  # Termos que devem ser buscados PRIMEIRO, antes de qualquer outro — sem isso, o teto
+  # de max_hashtags/keyword_search.max_keywords corta sempre os mesmos (os mais antigos
+  # no banco) e os termos novos nunca são buscados. Não muda a QUANTIDADE buscada, só
+  # a ordem — garante que esses sempre entram dentro do teto.
+  prioridade:
+    - "pdf"
+    - "arquivopdf"
+    - "pack"
+    - "colecao"
+    - "projetos"
+    - "templates"
+    - "svg"
+    - "png"
   markets:
     # Formato de Entrega (digital, pt) — acha o vendedor de PDF/apostila/molde direto
     formato_digital:
@@ -183,6 +196,17 @@ discovery:
       - "editaveis"
       - "imprimir"
       - "impressos"
+      # Do doc ORIGINAL ("Formato de Entrega") mas nunca tinham sido adicionados —
+      # faltar "pdf" era o motivo de PDF nunca aparecer nos resultados
+      - "pdf"
+      - "arquivopdf"
+      - "pack"
+      - "colecao"
+      - "projetos"
+      - "templates"
+      - "svg"
+      - "png"
+      # "digitaldownload" já existe em formato_es_en — não duplica aqui
     # Formato criativo/editável
     formato_criativo:
       - "templatecanva"
@@ -297,6 +321,31 @@ servico_local:
   - "diaria"
   - "hotel"
 
+# --- Confirmação de formato digital (TikTok E Meta — compartilhado) ---------
+# A keyword que achou o post (preço, "Kit", hashtag genérica) é forte demais sozinha
+# — bate em clínica, hotel, carro usado, revenda física, vlog. Só aceita o post se
+# ELE TAMBÉM tiver algum sinal inequívoco de entrega digital (deliberadamente sem
+# termos genéricos tipo "kit"/preço, senão vira circular).
+confirmacao_digital:
+  - "pdf"
+  - "arquivo digital"
+  - "editável"
+  - "editavel"
+  - "canva"
+  - "molde"
+  - "moldes"
+  - "apostila"
+  - "planilha"
+  - "template"
+  - "printable"
+  - "digital download"
+  - "download"
+  - "e-mail"
+  - "email"
+  - "imprimir"
+  - "imprimível"
+  - "imprimivel"
+
 # --- Pesos do score de intenção (peso, não match cru) -----------------------
 weights:
   intencao: 1.0
@@ -354,29 +403,6 @@ meta_ads:
   max_ads_por_pagina: 2      # "não repetir": limite de anúncios da MESMA página no resultado
                               # final (dentro da mesma varredura — diferente de pular_vistos,
                               # que evita re-achar entre varreduras)
-  # Confirmação de formato digital: keyword do PDF (preço, "Kit", "Pack") é genérica
-  # demais sozinha — bate em clínica, hotel, revenda física. Só aceita o anúncio se
-  # ELE TAMBÉM tiver algum sinal inequívoco de entrega digital (deliberadamente sem
-  # os termos genéricos do grupo "formato" acima, senão vira circular).
-  confirmacao_digital:
-    - "pdf"
-    - "arquivo digital"
-    - "editável"
-    - "editavel"
-    - "canva"
-    - "molde"
-    - "moldes"
-    - "apostila"
-    - "planilha"
-    - "template"
-    - "printable"
-    - "digital download"
-    - "download"
-    - "e-mail"
-    - "email"
-    - "imprimir"
-    - "imprimível"
-    - "imprimivel"
   keywords:
     precificacao:
       - "Apenas R$10"

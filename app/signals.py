@@ -222,11 +222,11 @@ def is_servico_local(text: str, cfg: dict) -> bool:
 
 
 def is_digital_confirmado(text: str, cfg: dict) -> bool:
-    """Confirma que o anúncio É digital de fato (pdf/molde/planilha/download…).
-    No Meta a keyword que achou o anúncio (preço, "Kit") é genérica demais
-    sozinha; exige esse segundo sinal antes de aceitar."""
+    """Confirma que o post/anúncio É digital de fato (pdf/molde/planilha/download…).
+    A keyword que achou (preço, "Kit", hashtag genérica) é genérica demais sozinha;
+    exige esse segundo sinal antes de aceitar. Compartilhado entre TikTok e Meta."""
     low = (text or "").lower()
-    termos = cfg.get("meta_ads", {}).get("confirmacao_digital", [])
+    termos = cfg.get("confirmacao_digital", [])
     return any(t.lower() in low for t in termos)
 
 

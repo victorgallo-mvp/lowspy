@@ -181,10 +181,20 @@ def run_sweep(session, cfg: dict, live: bool,
                               Keyword.tipo.in_(["hashtag", "top"]))
     ).scalars().all()
     ks_max_keywords = cfg.get("discovery", {}).get("keyword_search", {}).get("max_keywords", 30)
-    keywords = (
-        [k for k in active_kws if k.tipo == "hashtag"][:max_hashtags]
-        + [k for k in active_kws if k.tipo == "top"][:ks_max_keywords]
-    )
+    # Prioridade: termos dessa lista sempre entram primeiro na busca — sem isso, o teto
+    # (max_hashtags/max_keywords) sempre corta os mesmos e os termos novos nunca são
+    # buscados. Não muda QUANTO é buscado, só a ORDEM.
+    priority_terms = cfg.get("discovery", {}).get("prioridade", [])
+
+    def _priority_key(kw):
+        try:
+            return (0, priority_terms.index(kw.termo))
+        except ValueError:
+            return (1, 0)
+
+    hashtag_kws = sorted((k for k in active_kws if k.tipo == "hashtag"), key=_priority_key)
+    top_kws = sorted((k for k in active_kws if k.tipo == "top"), key=_priority_key)
+    keywords = hashtag_kws[:max_hashtags] + top_kws[:ks_max_keywords]
 
     import time
 
@@ -193,6 +203,7 @@ def run_sweep(session, cfg: dict, live: bool,
     fisico_dropped = 0
     velho_dropped = 0
     highticket_dropped = 0
+    nao_digital_dropped = 0  # bateu a keyword (preço/hashtag genérica) mas não confirma ser digital
     vistos_pulados = 0
     n0_by_id: dict[str, Any] = {}  # dedup por id (mesmo post surge em várias hashtags)
     thr = cfg["thresholds"]["intent_threshold"]
@@ -245,6 +256,9 @@ def run_sweep(session, cfg: dict, live: bool,
                         continue
                     if is_high_ticket(it.desc, cfg):  # queremos low-ticket
                         highticket_dropped += 1
+                        continue
+                    if not is_digital_confirmado(it.desc, cfg):  # keyword sozinha não prova nada
+                        nao_digital_dropped += 1
                         continue
                     if kw_recency:  # recência: mata viral evergreen que ressurge
                         ct = it.ct_int()
@@ -353,6 +367,7 @@ def run_sweep(session, cfg: dict, live: bool,
         "idioma_dropados": lang_dropped,
         "fisico_dropados": fisico_dropped,
         "highticket_dropados": highticket_dropped,
+        "nao_digital_dropados": nao_digital_dropped,
         "velhos_dropados": velho_dropped,
         "vistos_pulados": vistos_pulados,
         "n0_posts": len(candidates),

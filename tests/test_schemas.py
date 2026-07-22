@@ -43,3 +43,13 @@ def test_cover_url_cai_pro_card_em_anuncio_carrossel():
         "snapshot": {"images": [], "videos": [], "cards": [{"original_image_url": "https://x.test/img.jpg"}]},
     })
     assert it.cover_url == "https://x.test/img.jpg"
+
+
+def test_desc_inclui_titulo_do_anuncio_alem_do_corpo():
+    # anúncio só confirma "é digital" no título, não no corpo do texto principal
+    it = facebook_ad_to_item({
+        "ad_archive_id": "6",
+        "snapshot": {"title": "Apostila Digital Completa", "body": {"text": "Garanta já o seu, apenas R$14,90"}},
+    })
+    assert "Apostila Digital Completa" in it.desc
+    assert "Garanta já o seu" in it.desc
