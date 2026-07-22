@@ -11,11 +11,13 @@ import {
   TriggerError,
   Varredura,
   analisarLinkTiktok,
+  apagarReversoHistorico,
   apagarTermoSugerido,
   criarTermoSugerido,
   getCusto,
   getLatestRun,
   getProdutos,
+  getReversoHistorico,
   getRun,
   getTermosSugeridos,
   getVarreduras,
@@ -446,6 +448,15 @@ function ReversoSection() {
   const [loading, setLoading] = useState(false);
   const [res, setRes] = useState<Reverso | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [historico, setHistorico] = useState<Reverso[]>([]);
+
+  const carregarHistorico = useCallback(() => {
+    getReversoHistorico().then(setHistorico).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    carregarHistorico();
+  }, [carregarHistorico]);
 
   const analisar = useCallback(async () => {
     if (!url.trim() || loading) return;
@@ -457,6 +468,7 @@ function ReversoSection() {
     try {
       const r = await analisarLinkTiktok(url.trim(), token);
       setRes(r);
+      carregarHistorico();
     } catch (e) {
       if (e instanceof TriggerError && e.code === 401) {
         const t = window.prompt("Token de disparo (TRIGGER_TOKEN da API):") ?? "";
@@ -464,6 +476,7 @@ function ReversoSection() {
         localStorage.setItem("lowspy_token", t);
         try {
           setRes(await analisarLinkTiktok(url.trim(), t));
+          carregarHistorico();
         } catch {
           setErr("token rejeitado");
         }
@@ -473,7 +486,16 @@ function ReversoSection() {
     } finally {
       setLoading(false);
     }
-  }, [url, loading]);
+  }, [url, loading, carregarHistorico]);
+
+  const removerHistorico = useCallback(async (id: number) => {
+    setHistorico((v) => v.filter((h) => h.id !== id));  // otimista
+    try {
+      await apagarReversoHistorico(id);
+    } catch {
+      carregarHistorico();  // desfaz se falhar
+    }
+  }, [carregarHistorico]);
 
   return (
     <section className="reverso">
@@ -535,6 +557,23 @@ function ReversoSection() {
             </div>
           </div>
           <div className="rcost">{res.creditos_gastos ?? "?"} créditos gastos</div>
+        </div>
+      )}
+
+      {historico.length > 0 && (
+        <div className="reversohist">
+          <span className="plabel">histórico ({historico.length})</span>
+          {historico.map((h) => (
+            <div className="histitem" key={h.id}>
+              <button className="histmain" onClick={() => setRes(h)} title="ver análise completa">
+                <span className="histurl">{h.url.replace(/^https?:\/\//, "")}</span>
+                <span className="histmeta">
+                  {h.hashtags_encontradas.length} hashtag(s) · {h.n_comentarios_intencao} comentário(s) de intenção
+                </span>
+              </button>
+              <button className="termodel" onClick={() => h.id != null && removerHistorico(h.id)} title="remover">✕</button>
+            </div>
+          ))}
         </div>
       )}
     </section>

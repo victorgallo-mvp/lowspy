@@ -16,7 +16,7 @@ from sqlalchemy import func, select
 
 from . import config, jobs
 from .db import SessionLocal, init_db
-from .models import CostLog, Post, Produto, Run, Score, TermoSugerido
+from .models import CostLog, Post, Produto, ReversoHistorico, Run, Score, TermoSugerido
 from .pipeline import DBCost
 from .scrapecreators import DryRunClient, LiveClient
 from .signals import caption_seller_score, extract_hashtags, extract_price, intent_score
@@ -258,32 +258,86 @@ def reverso_tiktok(
             comments = []  # legenda ainda vale mesmo sem comentário
     finally:
         client.close()
-    db.commit()  # persiste o CostLog
-
     desc = aweme.get("desc", "") or ""
     stats = aweme.get("statistics", {}) or {}
     author = aweme.get("author", {}) or {}
     texts = [c.text for c in comments if c.text]
     intent = intent_score(texts, desc, cfg)
     cap = caption_seller_score(desc, cfg)
+    creditos = cost.total_credits()
+
+    hist = ReversoHistorico(
+        url=url,
+        legenda=desc,
+        hashtags_encontradas=extract_hashtags(desc),
+        preco_detectado=extract_price(desc, *texts),
+        autor=author.get("nickname") or author.get("unique_id") or "",
+        views=stats.get("play_count", 0),
+        curtidas=stats.get("digg_count", 0),
+        comentarios=stats.get("comment_count", 0),
+        comentarios_lidos=len(texts),
+        n_comentarios_intencao=intent["n_comentarios_intencao"],
+        comentarios_intencao=intent["matched_comments"][:8],  # LGPD: só texto
+        sinal_legenda=cap["hits"],
+        creditos_gastos=creditos,
+    )
+    db.add(hist)
+    db.commit()  # persiste o CostLog + o histórico
 
     return {
+        "id": hist.id,
         "url": url,
         "legenda": desc,
-        "hashtags_encontradas": extract_hashtags(desc),
-        "preco_detectado": extract_price(desc, *texts),
-        "autor": author.get("nickname") or author.get("unique_id") or "",
+        "hashtags_encontradas": hist.hashtags_encontradas,
+        "preco_detectado": hist.preco_detectado,
+        "autor": hist.autor,
         "engajamento": {
-            "views": stats.get("play_count", 0),
-            "curtidas": stats.get("digg_count", 0),
-            "comentarios": stats.get("comment_count", 0),
+            "views": hist.views,
+            "curtidas": hist.curtidas,
+            "comentarios": hist.comentarios,
         },
-        "comentarios_lidos": len(texts),
-        "n_comentarios_intencao": intent["n_comentarios_intencao"],
-        "comentarios_intencao": intent["matched_comments"][:8],  # LGPD: só texto
-        "sinal_legenda": cap["hits"],
-        "creditos_gastos": cost.total_credits(),
+        "comentarios_lidos": hist.comentarios_lidos,
+        "n_comentarios_intencao": hist.n_comentarios_intencao,
+        "comentarios_intencao": hist.comentarios_intencao,
+        "sinal_legenda": hist.sinal_legenda,
+        "creditos_gastos": creditos,
     }
+
+
+def _serialize_reverso(h: ReversoHistorico) -> dict:
+    return {
+        "id": h.id,
+        "url": h.url,
+        "legenda": h.legenda,
+        "hashtags_encontradas": h.hashtags_encontradas,
+        "preco_detectado": h.preco_detectado,
+        "autor": h.autor,
+        "engajamento": {"views": h.views, "curtidas": h.curtidas, "comentarios": h.comentarios},
+        "comentarios_lidos": h.comentarios_lidos,
+        "n_comentarios_intencao": h.n_comentarios_intencao,
+        "comentarios_intencao": h.comentarios_intencao,
+        "sinal_legenda": h.sinal_legenda,
+        "creditos_gastos": h.creditos_gastos,
+        "created_at": h.created_at.isoformat() if h.created_at else None,
+    }
+
+
+@app.get("/reverso/tiktok/historico")
+def reverso_tiktok_historico(db=Depends(get_db), limit: int = Query(50, ge=1, le=200)):
+    rows = db.execute(
+        select(ReversoHistorico).order_by(ReversoHistorico.id.desc()).limit(limit)
+    ).scalars().all()
+    return {"historico": [_serialize_reverso(h) for h in rows]}
+
+
+@app.delete("/reverso/tiktok/historico/{item_id}")
+def apagar_reverso_historico(item_id: int, db=Depends(get_db)):
+    h = db.get(ReversoHistorico, item_id)
+    if not h:
+        raise HTTPException(status_code=404, detail="registro não encontrado")
+    db.delete(h)
+    db.commit()
+    return {"ok": True}
 
 
 # --------------------------------------------------------------------------- #

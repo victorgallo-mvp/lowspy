@@ -37,6 +37,18 @@ def test_reverso_tiktok_exige_url(session):
     assert r.status_code == 400
 
 
+def test_reverso_tiktok_grava_e_lista_historico(session):
+    r = client.get("/reverso/tiktok?url=https://tiktok.com/@x/video/123&dry=true")
+    hid = r.json()["id"]
+
+    hist = client.get("/reverso/tiktok/historico").json()["historico"]
+    assert any(h["id"] == hid and "apostila" in h["hashtags_encontradas"] for h in hist)
+
+    assert client.delete(f"/reverso/tiktok/historico/{hid}").status_code == 200
+    hist2 = client.get("/reverso/tiktok/historico").json()["historico"]
+    assert not any(h["id"] == hid for h in hist2)
+
+
 def test_termos_sugeridos_cria_lista_e_apaga(session):
     r = client.post("/termos-sugeridos", json={"termo": "moldes de tricô", "fonte": "tiktok",
                                                 "nota": "vi um produto parecido validado"})

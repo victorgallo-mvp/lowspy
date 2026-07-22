@@ -170,3 +170,27 @@ class TermoSugerido(Base):
     fonte = Column(String(10), nullable=False, default="geral")  # tiktok | meta | geral
     nota = Column(Text, default="")  # por que o operador acha que vale testar
     created_at = Column(DateTime, server_default=func.now())
+
+
+class ReversoHistorico(Base):
+    """Histórico de links analisados na engenharia reversa — cada consulta ao
+    /reverso/tiktok fica salva aqui, pra não perder a análise depois que a página
+    fecha."""
+
+    __tablename__ = "reverso_historico"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    url = Column(Text, nullable=False)
+    legenda = Column(Text, default="")
+    hashtags_encontradas = Column(JSON, default=list)
+    preco_detectado = Column(String(40), nullable=True)
+    autor = Column(String(120), default="")
+    views = Column(Integer, default=0)
+    curtidas = Column(Integer, default=0)
+    comentarios = Column(Integer, default=0)
+    comentarios_lidos = Column(Integer, default=0)
+    n_comentarios_intencao = Column(Integer, default=0)
+    comentarios_intencao = Column(JSON, default=list)  # LGPD: só texto, sem nick/uid
+    sinal_legenda = Column(JSON, default=list)
+    creditos_gastos = Column(Integer, nullable=True)
+    created_at = Column(DateTime, server_default=func.now())

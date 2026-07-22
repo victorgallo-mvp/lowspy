@@ -148,6 +148,7 @@ export async function getRun(id: number): Promise<Run> {
 }
 
 export type Reverso = {
+  id?: number;
   url: string;
   legenda: string;
   hashtags_encontradas: string[];
@@ -159,6 +160,7 @@ export type Reverso = {
   comentarios_intencao: string[];
   sinal_legenda: string[];
   creditos_gastos: number | null;
+  created_at?: string | null;
 };
 
 export async function analisarLinkTiktok(url: string, token?: string): Promise<Reverso> {
@@ -171,6 +173,17 @@ export async function analisarLinkTiktok(url: string, token?: string): Promise<R
     throw new Error(body?.detail || `API ${r.status}`);
   }
   return r.json();
+}
+
+export async function getReversoHistorico(): Promise<Reverso[]> {
+  const r = await fetch(`${API_BASE}/reverso/tiktok/historico`, { cache: "no-store" });
+  if (!r.ok) throw new Error(`API ${r.status}`);
+  return (await r.json()).historico;
+}
+
+export async function apagarReversoHistorico(id: number): Promise<void> {
+  const r = await fetch(`${API_BASE}/reverso/tiktok/historico/${id}`, { method: "DELETE" });
+  if (!r.ok) throw new Error(`API ${r.status}`);
 }
 
 export async function getLatestRun(): Promise<{ running: boolean; ultima: Run | null }> {
