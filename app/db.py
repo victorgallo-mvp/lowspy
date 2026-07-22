@@ -47,6 +47,9 @@ def _ensure_columns() -> None:
         ("posts", "termo_origem", "VARCHAR(120) DEFAULT ''"),
         ("posts", "anunciante_total_ads", "INTEGER"),
         ("posts", "anunciante_tem_mais_ads", "BOOLEAN"),
+        ("reverso_historico", "fonte", "VARCHAR(10) DEFAULT 'tiktok'"),
+        ("reverso_historico", "dias_ativos", "INTEGER"),
+        ("reverso_historico", "ativo", "BOOLEAN"),
     ]
     lock_timeout_ms = 5000  # por tentativa — nunca fica preso esperando o lock pra sempre
     max_attempts = 6

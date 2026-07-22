@@ -173,18 +173,19 @@ class TermoSugerido(Base):
 
 
 class ReversoHistorico(Base):
-    """Histórico de links analisados na engenharia reversa — cada consulta ao
-    /reverso/tiktok fica salva aqui, pra não perder a análise depois que a página
-    fecha."""
+    """Histórico de links analisados na engenharia reversa (TikTok e Meta) — cada
+    consulta a /reverso/tiktok ou /reverso/meta fica salva aqui, pra não perder a
+    análise depois que a página fecha."""
 
     __tablename__ = "reverso_historico"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
+    fonte = Column(String(10), nullable=False, default="tiktok")  # tiktok | meta
     url = Column(Text, nullable=False)
-    legenda = Column(Text, default="")
+    legenda = Column(Text, default="")  # tiktok: legenda | meta: título+corpo do anúncio
     hashtags_encontradas = Column(JSON, default=list)
     preco_detectado = Column(String(40), nullable=True)
-    autor = Column(String(120), default="")
+    autor = Column(String(120), default="")  # tiktok: @nick | meta: nome da página
     views = Column(Integer, default=0)
     curtidas = Column(Integer, default=0)
     comentarios = Column(Integer, default=0)
@@ -192,5 +193,7 @@ class ReversoHistorico(Base):
     n_comentarios_intencao = Column(Integer, default=0)
     comentarios_intencao = Column(JSON, default=list)  # LGPD: só texto, sem nick/uid
     sinal_legenda = Column(JSON, default=list)
+    dias_ativos = Column(Integer, nullable=True)  # meta: tempo de veiculação
+    ativo = Column(Boolean, nullable=True)         # meta: anúncio ainda ativo?
     creditos_gastos = Column(Integer, nullable=True)
     created_at = Column(DateTime, server_default=func.now())

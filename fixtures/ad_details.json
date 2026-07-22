@@ -1,0 +1,22 @@
+{
+  "adArchiveID": "9100000000009999",
+  "pageName": "Ateliê Digital Moldes",
+  "pageID": "610000000000001",
+  "startDate": 1718000000,
+  "endDate": null,
+  "isActive": true,
+  "totalActiveTime": 24,
+  "publisherPlatform": ["FACEBOOK", "INSTAGRAM"],
+  "snapshot": {
+    "title": "Apostila Digital de Moldes Completa",
+    "body": {"text": "Kit com 250 Moldes Prontos para Imprimir, apenas R$14,90! Download imediato, arquivo digital."},
+    "cta_text": "Comprar agora",
+    "caption": "loja.exemplo.com",
+    "link_url": "https://example.com/checkout-reverso",
+    "images": [],
+    "videos": [],
+    "cards": []
+  },
+  "spend": null,
+  "reachEstimate": null
+}

@@ -19,7 +19,13 @@ from .db import SessionLocal, init_db
 from .models import CostLog, Post, Produto, ReversoHistorico, Run, Score, TermoSugerido
 from .pipeline import DBCost
 from .scrapecreators import DryRunClient, LiveClient
-from .signals import caption_seller_score, extract_hashtags, extract_price, intent_score
+from .signals import (
+    caption_seller_score,
+    extract_hashtags,
+    extract_price,
+    intent_score,
+    is_digital_confirmado,
+)
 
 
 @asynccontextmanager
@@ -267,6 +273,7 @@ def reverso_tiktok(
     creditos = cost.total_credits()
 
     hist = ReversoHistorico(
+        fonte="tiktok",
         url=url,
         legenda=desc,
         hashtags_encontradas=extract_hashtags(desc),
@@ -286,6 +293,7 @@ def reverso_tiktok(
 
     return {
         "id": hist.id,
+        "fonte": "tiktok",
         "url": url,
         "legenda": desc,
         "hashtags_encontradas": hist.hashtags_encontradas,
@@ -304,33 +312,130 @@ def reverso_tiktok(
     }
 
 
-def _serialize_reverso(h: ReversoHistorico) -> dict:
+@app.get("/reverso/meta")
+def reverso_meta(
+    url: str = Query(..., description="link do anúncio no Meta Ad Library"),
+    dry: bool = Query(False, description="true = dry-run (fixture, gasto zero)"),
+    db=Depends(get_db),
+    x_api_token: Optional[str] = Header(None),
+):
+    _require_token(x_api_token)
+    url = url.strip()
+    if not url:
+        raise HTTPException(status_code=400, detail="url obrigatória")
+
+    cfg = config.load_config()
+    cost = DBCost(db)
+    client: Any
+    if dry:
+        client = DryRunClient(cost.record)
+    else:
+        if not config.SCRAPECREATORS_API_KEY:
+            raise HTTPException(status_code=500, detail="SCRAPECREATORS_API_KEY não configurada")
+        client = LiveClient(config.SCRAPECREATORS_API_KEY, cost.record)
+    try:
+        ad = client.ad_details(url)
+    finally:
+        client.close()
+    if not ad:
+        raise HTTPException(status_code=404, detail="anúncio não encontrado")
+
+    def _any(d: dict, *keys, default=None):
+        # a doc do endpoint de detalhe usa camelCase; o de busca usa snake_case —
+        # aceita os dois, não confia numa forma só
+        for k in keys:
+            v = d.get(k)
+            if v is not None:
+                return v
+        return default
+
+    snapshot = ad.get("snapshot", {}) or {}
+    titulo = snapshot.get("title", "") or ""
+    corpo = ((snapshot.get("body") or {}).get("text", "") or "") if isinstance(snapshot.get("body"), dict) else ""
+    if not corpo:
+        for card in snapshot.get("cards") or []:
+            if isinstance(card, dict) and card.get("body"):
+                corpo = card["body"]
+                break
+    desc = f"{titulo} {corpo}".strip()
+    cap = caption_seller_score(desc, cfg)
+    digital_ok = is_digital_confirmado(desc, cfg)
+    # só 1 chamada aqui (ad_details) — não dá pra medir delta de créditos (precisa de
+    # 2+), então cai pra contagem de requests como aproximação (1 request ≈ 1 crédito)
+    creditos = cost.total_credits()
+    if creditos is None:
+        creditos = sum(cost.counts.values())
+
+    hist = ReversoHistorico(
+        fonte="meta",
+        url=url,
+        legenda=desc,
+        hashtags_encontradas=extract_hashtags(desc),
+        preco_detectado=extract_price(desc),
+        autor=_any(ad, "pageName", "page_name", default=""),
+        dias_ativos=_any(ad, "totalActiveTime", "total_active_time"),
+        ativo=_any(ad, "isActive", "is_active"),
+        sinal_legenda=cap["hits"],
+        creditos_gastos=creditos,
+    )
+    db.add(hist)
+    db.commit()
+
     return {
+        "id": hist.id,
+        "fonte": "meta",
+        "url": url,
+        "legenda": desc,
+        "hashtags_encontradas": hist.hashtags_encontradas,
+        "preco_detectado": hist.preco_detectado,
+        "autor": hist.autor,
+        "dias_ativos": hist.dias_ativos,
+        "ativo": bool(hist.ativo) if hist.ativo is not None else None,
+        "sinal_legenda": hist.sinal_legenda,
+        "digital_confirmado": digital_ok,
+        "creditos_gastos": creditos,
+    }
+
+
+def _serialize_reverso(h: ReversoHistorico) -> dict:
+    base = {
         "id": h.id,
+        "fonte": h.fonte,
         "url": h.url,
         "legenda": h.legenda,
         "hashtags_encontradas": h.hashtags_encontradas,
         "preco_detectado": h.preco_detectado,
         "autor": h.autor,
-        "engajamento": {"views": h.views, "curtidas": h.curtidas, "comentarios": h.comentarios},
-        "comentarios_lidos": h.comentarios_lidos,
-        "n_comentarios_intencao": h.n_comentarios_intencao,
-        "comentarios_intencao": h.comentarios_intencao,
         "sinal_legenda": h.sinal_legenda,
         "creditos_gastos": h.creditos_gastos,
         "created_at": h.created_at.isoformat() if h.created_at else None,
     }
+    if h.fonte == "meta":
+        base["dias_ativos"] = h.dias_ativos
+        base["ativo"] = h.ativo
+    else:
+        base["engajamento"] = {"views": h.views, "curtidas": h.curtidas, "comentarios": h.comentarios}
+        base["comentarios_lidos"] = h.comentarios_lidos
+        base["n_comentarios_intencao"] = h.n_comentarios_intencao
+        base["comentarios_intencao"] = h.comentarios_intencao
+    return base
 
 
-@app.get("/reverso/tiktok/historico")
-def reverso_tiktok_historico(db=Depends(get_db), limit: int = Query(50, ge=1, le=200)):
-    rows = db.execute(
-        select(ReversoHistorico).order_by(ReversoHistorico.id.desc()).limit(limit)
-    ).scalars().all()
+@app.get("/reverso/historico")
+def reverso_historico(
+    db=Depends(get_db),
+    limit: int = Query(50, ge=1, le=200),
+    fonte: str = Query("all", description="tiktok | meta | all"),
+):
+    q = select(ReversoHistorico).order_by(ReversoHistorico.id.desc()).limit(limit)
+    if fonte != "all":
+        q = select(ReversoHistorico).where(ReversoHistorico.fonte == fonte) \
+            .order_by(ReversoHistorico.id.desc()).limit(limit)
+    rows = db.execute(q).scalars().all()
     return {"historico": [_serialize_reverso(h) for h in rows]}
 
 
-@app.delete("/reverso/tiktok/historico/{item_id}")
+@app.delete("/reverso/historico/{item_id}")
 def apagar_reverso_historico(item_id: int, db=Depends(get_db)):
     h = db.get(ReversoHistorico, item_id)
     if not h:

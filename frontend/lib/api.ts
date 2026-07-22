@@ -149,22 +149,26 @@ export async function getRun(id: number): Promise<Run> {
 
 export type Reverso = {
   id?: number;
+  fonte?: "tiktok" | "meta";
   url: string;
   legenda: string;
   hashtags_encontradas: string[];
   preco_detectado: string | null;
   autor: string;
-  engajamento: { views: number; curtidas: number; comentarios: number };
-  comentarios_lidos: number;
-  n_comentarios_intencao: number;
-  comentarios_intencao: string[];
+  engajamento?: { views: number; curtidas: number; comentarios: number };
+  comentarios_lidos?: number;
+  n_comentarios_intencao?: number;
+  comentarios_intencao?: string[];
   sinal_legenda: string[];
+  dias_ativos?: number | null;
+  ativo?: boolean | null;
+  digital_confirmado?: boolean;
   creditos_gastos: number | null;
   created_at?: string | null;
 };
 
-export async function analisarLinkTiktok(url: string, token?: string): Promise<Reverso> {
-  const r = await fetch(`${API_BASE}/reverso/tiktok?url=${encodeURIComponent(url)}`, {
+async function _analisarLink(path: string, url: string, token?: string): Promise<Reverso> {
+  const r = await fetch(`${API_BASE}${path}?url=${encodeURIComponent(url)}`, {
     headers: token ? { "X-API-Token": token } : {},
   });
   if (!r.ok) {
@@ -175,14 +179,20 @@ export async function analisarLinkTiktok(url: string, token?: string): Promise<R
   return r.json();
 }
 
-export async function getReversoHistorico(): Promise<Reverso[]> {
-  const r = await fetch(`${API_BASE}/reverso/tiktok/historico`, { cache: "no-store" });
+export const analisarLinkTiktok = (url: string, token?: string) =>
+  _analisarLink("/reverso/tiktok", url, token);
+
+export const analisarLinkMeta = (url: string, token?: string) =>
+  _analisarLink("/reverso/meta", url, token);
+
+export async function getReversoHistorico(fonte: "tiktok" | "meta" | "all" = "all"): Promise<Reverso[]> {
+  const r = await fetch(`${API_BASE}/reverso/historico?fonte=${fonte}`, { cache: "no-store" });
   if (!r.ok) throw new Error(`API ${r.status}`);
   return (await r.json()).historico;
 }
 
 export async function apagarReversoHistorico(id: number): Promise<void> {
-  const r = await fetch(`${API_BASE}/reverso/tiktok/historico/${id}`, { method: "DELETE" });
+  const r = await fetch(`${API_BASE}/reverso/historico/${id}`, { method: "DELETE" });
   if (!r.ok) throw new Error(`API ${r.status}`);
 }
 

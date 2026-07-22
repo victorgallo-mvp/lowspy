@@ -120,6 +120,13 @@ class LiveClient:
         results = data.get("results", [])
         return len(results), bool(data.get("cursor"))
 
+    def ad_details(self, url: str) -> dict:
+        """Engenharia reversa: dados de UM anúncio específico do Meta por link (aceita
+        a URL do Ad Library direto, sem precisar extrair o id manualmente)."""
+        data = self._get("/v1/facebook/adLibrary/ad", {"url": url})
+        self.on_call("ad_details", data.get("credits_remaining"), {"url": url})
+        return data or {}
+
     def close(self) -> None:
         self._c.close()
 
@@ -134,6 +141,7 @@ class DryRunClient:
         self._comments = json.loads((d / "comments.json").read_text("utf-8"))
         self._meta_ads = json.loads((d / "facebook_ads.json").read_text("utf-8"))
         self._video_info = json.loads((d / "video_info.json").read_text("utf-8"))
+        self._ad_details = json.loads((d / "ad_details.json").read_text("utf-8"))
         self._credits = int(self._top.get("credits_remaining", 1000))
 
     def _spend(self, endpoint: str, params: dict) -> None:
@@ -173,6 +181,10 @@ class DryRunClient:
         self._spend("company_ads_count", {"pageId": page_id})
         n = sum(1 for a in self._meta_ads.get("searchResults", []) if a.get("page_id") == page_id)
         return n, False
+
+    def ad_details(self, url: str) -> dict:
+        self._spend("ad_details", {"url": url})
+        return self._ad_details
 
     def close(self) -> None:
         pass

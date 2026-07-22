@@ -10,6 +10,7 @@ import {
   TermoSugerido,
   TriggerError,
   Varredura,
+  analisarLinkMeta,
   analisarLinkTiktok,
   apagarReversoHistorico,
   apagarTermoSugerido,
@@ -444,6 +445,7 @@ export default function Dashboard() {
 }
 
 function ReversoSection() {
+  const [fonte, setFonte] = useState<"tiktok" | "meta">("tiktok");
   const [url, setUrl] = useState("");
   const [loading, setLoading] = useState(false);
   const [res, setRes] = useState<Reverso | null>(null);
@@ -451,7 +453,7 @@ function ReversoSection() {
   const [historico, setHistorico] = useState<Reverso[]>([]);
 
   const carregarHistorico = useCallback(() => {
-    getReversoHistorico().then(setHistorico).catch(() => {});
+    getReversoHistorico("all").then(setHistorico).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -465,8 +467,9 @@ function ReversoSection() {
     setRes(null);
     const token =
       typeof window !== "undefined" ? localStorage.getItem("lowspy_token") ?? undefined : undefined;
+    const chamar = fonte === "meta" ? analisarLinkMeta : analisarLinkTiktok;
     try {
-      const r = await analisarLinkTiktok(url.trim(), token);
+      const r = await chamar(url.trim(), token);
       setRes(r);
       carregarHistorico();
     } catch (e) {
@@ -475,7 +478,7 @@ function ReversoSection() {
         if (!t) { setErr("cancelado (sem token)"); setLoading(false); return; }
         localStorage.setItem("lowspy_token", t);
         try {
-          setRes(await analisarLinkTiktok(url.trim(), t));
+          setRes(await chamar(url.trim(), t));
           carregarHistorico();
         } catch {
           setErr("token rejeitado");
@@ -486,7 +489,7 @@ function ReversoSection() {
     } finally {
       setLoading(false);
     }
-  }, [url, loading, carregarHistorico]);
+  }, [url, loading, fonte, carregarHistorico]);
 
   const removerHistorico = useCallback(async (id: number) => {
     setHistorico((v) => v.filter((h) => h.id !== id));  // otimista
@@ -497,18 +500,30 @@ function ReversoSection() {
     }
   }, [carregarHistorico]);
 
+  const resIsMeta = res?.fonte === "meta";
+
   return (
     <section className="reverso">
       <h2>engenharia reversa</h2>
       <p className="reversotag">
-        cole o link de um produto que você já validou — o sistema lê a legenda e os
-        comentários e mostra as hashtags e sinais que ele usaria. Só análise: não entra
-        na busca automática sozinho.
+        cole o link de um produto (ou anúncio) que você já validou — o sistema extrai
+        legenda, hashtags e sinais de demanda. Só análise: não entra na busca automática
+        sozinho.
       </p>
+      <div className="fontebar reversofonte">
+        <button className={`tab ${fonte === "tiktok" ? "active" : ""}`} onClick={() => setFonte("tiktok")}>
+          TikTok
+        </button>
+        <button className={`tab ${fonte === "meta" ? "active" : ""}`} onClick={() => setFonte("meta")}>
+          Meta Ads
+        </button>
+      </div>
       <div className="reversoform">
         <input
           type="text"
-          placeholder="https://www.tiktok.com/@usuario/video/123..."
+          placeholder={fonte === "meta"
+            ? "https://www.facebook.com/ads/library/?id=..."
+            : "https://www.tiktok.com/@usuario/video/123..."}
           value={url}
           onChange={(e) => setUrl(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && analisar()}
@@ -536,25 +551,51 @@ function ReversoSection() {
               <span className="plabel">preço detectado</span>
               <div>{res.preco_detectado ?? <span className="rempty">nenhum</span>}</div>
             </div>
-            <div>
-              <span className="plabel">engajamento</span>
-              <div>
-                {compact(res.engajamento.views)} views · {compact(res.engajamento.curtidas)} curtidas ·{" "}
-                {compact(res.engajamento.comentarios)} comentários
-              </div>
-            </div>
-            <div>
-              <span className="plabel">
-                demanda nos comentários · {res.n_comentarios_intencao}/{res.comentarios_lidos} lidos
-              </span>
-              {res.comentarios_intencao.length > 0 ? (
-                res.comentarios_intencao.map((c, k) => (
-                  <div className="quote" key={k}><b>“{c}”</b></div>
-                ))
-              ) : (
-                <span className="rempty">nenhum comentário de intenção encontrado</span>
-              )}
-            </div>
+            {resIsMeta ? (
+              <>
+                <div>
+                  <span className="plabel">tempo de veiculação</span>
+                  <div>
+                    {res.dias_ativos != null ? `${res.dias_ativos} dias` : <span className="rempty">?</span>}
+                    {" · "}{res.ativo ? "ativo agora" : "inativo"}
+                  </div>
+                </div>
+                <div>
+                  <span className="plabel">confirma formato digital?</span>
+                  <div>{res.digital_confirmado ? "sim" : "não — só o texto principal não confirma"}</div>
+                  <span className="plabel" style={{ marginTop: 10, display: "block" }}>sinal na legenda</span>
+                  {res.sinal_legenda.length > 0 ? (
+                    <div className="badges">
+                      {res.sinal_legenda.map((s) => <span className="badge termo" key={s}>{s}</span>)}
+                    </div>
+                  ) : (
+                    <span className="rempty">nenhum</span>
+                  )}
+                </div>
+              </>
+            ) : (
+              <>
+                <div>
+                  <span className="plabel">engajamento</span>
+                  <div>
+                    {compact(res.engajamento?.views ?? 0)} views · {compact(res.engajamento?.curtidas ?? 0)} curtidas ·{" "}
+                    {compact(res.engajamento?.comentarios ?? 0)} comentários
+                  </div>
+                </div>
+                <div>
+                  <span className="plabel">
+                    demanda nos comentários · {res.n_comentarios_intencao ?? 0}/{res.comentarios_lidos ?? 0} lidos
+                  </span>
+                  {res.comentarios_intencao && res.comentarios_intencao.length > 0 ? (
+                    res.comentarios_intencao.map((c, k) => (
+                      <div className="quote" key={k}><b>“{c}”</b></div>
+                    ))
+                  ) : (
+                    <span className="rempty">nenhum comentário de intenção encontrado</span>
+                  )}
+                </div>
+              </>
+            )}
           </div>
           <div className="rcost">{res.creditos_gastos ?? "?"} créditos gastos</div>
         </div>
@@ -566,9 +607,12 @@ function ReversoSection() {
           {historico.map((h) => (
             <div className="histitem" key={h.id}>
               <button className="histmain" onClick={() => setRes(h)} title="ver análise completa">
+                <span className={`badge src ${h.fonte === "meta" ? "meta" : "tiktok"}`}>{h.fonte}</span>
                 <span className="histurl">{h.url.replace(/^https?:\/\//, "")}</span>
                 <span className="histmeta">
-                  {h.hashtags_encontradas.length} hashtag(s) · {h.n_comentarios_intencao} comentário(s) de intenção
+                  {h.fonte === "meta"
+                    ? `${h.dias_ativos ?? "?"} dias ativos`
+                    : `${h.n_comentarios_intencao ?? 0} comentário(s) de intenção`}
                 </span>
               </button>
               <button className="termodel" onClick={() => h.id != null && removerHistorico(h.id)} title="remover">✕</button>

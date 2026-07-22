@@ -41,12 +41,34 @@ def test_reverso_tiktok_grava_e_lista_historico(session):
     r = client.get("/reverso/tiktok?url=https://tiktok.com/@x/video/123&dry=true")
     hid = r.json()["id"]
 
-    hist = client.get("/reverso/tiktok/historico").json()["historico"]
-    assert any(h["id"] == hid and "apostila" in h["hashtags_encontradas"] for h in hist)
+    hist = client.get("/reverso/historico").json()["historico"]
+    assert any(h["id"] == hid and h["fonte"] == "tiktok" and "apostila" in h["hashtags_encontradas"]
+              for h in hist)
 
-    assert client.delete(f"/reverso/tiktok/historico/{hid}").status_code == 200
-    hist2 = client.get("/reverso/tiktok/historico").json()["historico"]
+    assert client.delete(f"/reverso/historico/{hid}").status_code == 200
+    hist2 = client.get("/reverso/historico").json()["historico"]
     assert not any(h["id"] == hid for h in hist2)
+
+
+def test_reverso_meta_extrai_e_grava_historico(session):
+    r = client.get("/reverso/meta?url=https://facebook.com/ads/library/?id=123&dry=true")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["fonte"] == "meta"
+    assert "moldes" in [h.lower() for h in body["hashtags_encontradas"]] or body["preco_detectado"]
+    assert body["dias_ativos"] == 24
+    assert body["ativo"] is True
+    assert body["digital_confirmado"] is True
+
+    hist = client.get("/reverso/historico?fonte=meta").json()["historico"]
+    assert any(h["id"] == body["id"] and h["fonte"] == "meta" for h in hist)
+    # filtro por fonte não mistura com tiktok
+    assert all(h["fonte"] == "meta" for h in hist)
+
+
+def test_reverso_meta_exige_url(session):
+    r = client.get("/reverso/meta?url=  &dry=true")
+    assert r.status_code == 400
 
 
 def test_termos_sugeridos_cria_lista_e_apaga(session):
