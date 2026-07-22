@@ -7,13 +7,17 @@ import {
   Produto,
   ProdutosResp,
   Reverso,
+  TermoSugerido,
   TriggerError,
   Varredura,
   analisarLinkTiktok,
+  apagarTermoSugerido,
+  criarTermoSugerido,
   getCusto,
   getLatestRun,
   getProdutos,
   getRun,
+  getTermosSugeridos,
   getVarreduras,
   triggerSweep,
 } from "@/lib/api";
@@ -429,7 +433,10 @@ export default function Dashboard() {
         </div>
       )}
 
-      <ReversoSection />
+      <div className="reversorow">
+        <ReversoSection />
+        <TermosSugeridosSection />
+      </div>
     </main>
   );
 }
@@ -530,6 +537,100 @@ function ReversoSection() {
           <div className="rcost">{res.creditos_gastos ?? "?"} créditos gastos</div>
         </div>
       )}
+    </section>
+  );
+}
+
+function TermosSugeridosSection() {
+  const [termo, setTermo] = useState("");
+  const [fonte, setFonte] = useState<"tiktok" | "meta" | "geral">("geral");
+  const [nota, setNota] = useState("");
+  const [lista, setLista] = useState<TermoSugerido[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const carregar = useCallback(() => {
+    getTermosSugeridos().then(setLista).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    carregar();
+  }, [carregar]);
+
+  const adicionar = useCallback(async () => {
+    if (!termo.trim() || loading) return;
+    setLoading(true);
+    setErr(null);
+    try {
+      await criarTermoSugerido(termo.trim(), fonte, nota.trim());
+      setTermo("");
+      setNota("");
+      carregar();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "falha ao salvar");
+    } finally {
+      setLoading(false);
+    }
+  }, [termo, fonte, nota, loading, carregar]);
+
+  const remover = useCallback(async (id: number) => {
+    setLista((v) => v.filter((t) => t.id !== id));  // otimista
+    try {
+      await apagarTermoSugerido(id);
+    } catch {
+      carregar();  // desfaz se falhar
+    }
+  }, [carregar]);
+
+  return (
+    <section className="reverso termos">
+      <h2>termos pra avaliar</h2>
+      <p className="reversotag">
+        anotou uma palavra nova que pode valer a pena buscar? guarda aqui — fica só
+        registrado pra avaliação, não entra na varredura automática sozinho.
+      </p>
+      <div className="reversoform termosform">
+        <input
+          type="text"
+          placeholder="ex: cadernos personalizados"
+          value={termo}
+          onChange={(e) => setTermo(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && adicionar()}
+        />
+        <select value={fonte} onChange={(e) => setFonte(e.target.value as typeof fonte)}>
+          <option value="geral">geral</option>
+          <option value="tiktok">tiktok</option>
+          <option value="meta">meta</option>
+        </select>
+        <button className="btn" onClick={adicionar} disabled={loading || !termo.trim()}>
+          {loading ? "…" : "+ adicionar"}
+        </button>
+      </div>
+      <input
+        type="text"
+        className="notainput"
+        placeholder="nota (opcional) — por que acha que vale testar"
+        value={nota}
+        onChange={(e) => setNota(e.target.value)}
+        onKeyDown={(e) => e.key === "Enter" && adicionar()}
+      />
+      {err && <div className="state err">erro: {err}</div>}
+      <div className="termoslist">
+        {lista.length === 0 ? (
+          <span className="rempty">nenhum termo guardado ainda</span>
+        ) : (
+          lista.map((t) => (
+            <div className="termoitem" key={t.id}>
+              <span className={`badge src ${t.fonte === "meta" ? "meta" : t.fonte === "tiktok" ? "tiktok" : ""}`}>
+                {t.fonte}
+              </span>
+              <span className="termotexto">{t.termo}</span>
+              {t.nota && <span className="termonota">— {t.nota}</span>}
+              <button className="termodel" onClick={() => remover(t.id)} title="remover">✕</button>
+            </div>
+          ))
+        )}
+      </div>
     </section>
   );
 }

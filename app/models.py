@@ -156,3 +156,17 @@ class CostLog(Base):
     credits_remaining = Column(Integer, nullable=True)
     credits_spent = Column(Integer, nullable=True)  # delta calculado no run
     ts = Column(DateTime, server_default=func.now())
+
+
+class TermoSugerido(Base):
+    """Termo de busca sugerido manualmente pelo operador, pra avaliar depois — NÃO
+    entra na varredura sozinho (curadoria manual, igual o link da engenharia reversa;
+    decide-se separadamente quando/se promover pro yaml de discovery/meta_ads)."""
+
+    __tablename__ = "termos_sugeridos"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    termo = Column(String(200), nullable=False)
+    fonte = Column(String(10), nullable=False, default="geral")  # tiktok | meta | geral
+    nota = Column(Text, default="")  # por que o operador acha que vale testar
+    created_at = Column(DateTime, server_default=func.now())

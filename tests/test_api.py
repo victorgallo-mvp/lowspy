@@ -37,6 +37,28 @@ def test_reverso_tiktok_exige_url(session):
     assert r.status_code == 400
 
 
+def test_termos_sugeridos_cria_lista_e_apaga(session):
+    r = client.post("/termos-sugeridos", json={"termo": "moldes de tricô", "fonte": "tiktok",
+                                                "nota": "vi um produto parecido validado"})
+    assert r.status_code == 200
+    tid = r.json()["id"]
+
+    lst = client.get("/termos-sugeridos").json()["termos"]
+    assert any(t["id"] == tid and t["termo"] == "moldes de tricô" for t in lst)
+
+    assert client.delete(f"/termos-sugeridos/{tid}").status_code == 200
+    lst2 = client.get("/termos-sugeridos").json()["termos"]
+    assert not any(t["id"] == tid for t in lst2)
+
+
+def test_termos_sugeridos_exige_termo_e_valida_fonte(session):
+    assert client.post("/termos-sugeridos", json={"termo": "  "}).status_code == 400
+    assert client.post("/termos-sugeridos", json={"termo": "x", "fonte": "invalida"}).status_code == 400
+    # sem "fonte" cai no default "geral"
+    r = client.post("/termos-sugeridos", json={"termo": "papelaria vintage"})
+    assert r.status_code == 200 and r.json()["fonte"] == "geral"
+
+
 def test_listar_produtos_ordena_por_views(session):
     _seed_and_sweep(session)
     r = client.get("/produtos?limit=10")  # default sort=views (viralização)

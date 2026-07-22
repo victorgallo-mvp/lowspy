@@ -178,3 +178,39 @@ export async function getLatestRun(): Promise<{ running: boolean; ultima: Run | 
   if (!r.ok) throw new Error(`API ${r.status}`);
   return r.json();
 }
+
+export type TermoSugerido = {
+  id: number;
+  termo: string;
+  fonte: "tiktok" | "meta" | "geral";
+  nota: string;
+  created_at: string | null;
+};
+
+export async function getTermosSugeridos(): Promise<TermoSugerido[]> {
+  const r = await fetch(`${API_BASE}/termos-sugeridos`, { cache: "no-store" });
+  if (!r.ok) throw new Error(`API ${r.status}`);
+  return (await r.json()).termos;
+}
+
+export async function criarTermoSugerido(
+  termo: string,
+  fonte: "tiktok" | "meta" | "geral",
+  nota?: string
+): Promise<TermoSugerido> {
+  const r = await fetch(`${API_BASE}/termos-sugeridos`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ termo, fonte, nota: nota ?? "" }),
+  });
+  if (!r.ok) {
+    const body = await r.json().catch(() => null);
+    throw new Error(body?.detail || `API ${r.status}`);
+  }
+  return r.json();
+}
+
+export async function apagarTermoSugerido(id: number): Promise<void> {
+  const r = await fetch(`${API_BASE}/termos-sugeridos/${id}`, { method: "DELETE" });
+  if (!r.ok) throw new Error(`API ${r.status}`);
+}

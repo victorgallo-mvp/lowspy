@@ -16,7 +16,7 @@ from sqlalchemy import func, select
 
 from . import config, jobs
 from .db import SessionLocal, init_db
-from .models import CostLog, Post, Produto, Run, Score
+from .models import CostLog, Post, Produto, Run, Score, TermoSugerido
 from .pipeline import DBCost
 from .scrapecreators import DryRunClient, LiveClient
 from .signals import caption_seller_score, extract_hashtags, extract_price, intent_score
@@ -284,6 +284,53 @@ def reverso_tiktok(
         "sinal_legenda": cap["hits"],
         "creditos_gastos": cost.total_credits(),
     }
+
+
+# --------------------------------------------------------------------------- #
+# Termos sugeridos: curadoria manual, junto da engenharia reversa — só guarda
+# pra avaliar depois, NÃO entra na varredura sozinho (grátis, sem custo de API).
+# --------------------------------------------------------------------------- #
+@app.post("/termos-sugeridos")
+def criar_termo_sugerido(payload: dict, db=Depends(get_db)):
+    termo = (payload.get("termo") or "").strip()
+    if not termo:
+        raise HTTPException(status_code=400, detail="termo obrigatório")
+    fonte = (payload.get("fonte") or "geral").strip()
+    if fonte not in ("tiktok", "meta", "geral"):
+        raise HTTPException(status_code=400, detail="fonte inválida (tiktok|meta|geral)")
+    t = TermoSugerido(termo=termo, fonte=fonte, nota=(payload.get("nota") or "").strip())
+    db.add(t)
+    db.commit()
+    return {
+        "id": t.id, "termo": t.termo, "fonte": t.fonte, "nota": t.nota,
+        "created_at": t.created_at.isoformat() if t.created_at else None,
+    }
+
+
+@app.get("/termos-sugeridos")
+def listar_termos_sugeridos(db=Depends(get_db), limit: int = Query(100, ge=1, le=500)):
+    rows = db.execute(
+        select(TermoSugerido).order_by(TermoSugerido.id.desc()).limit(limit)
+    ).scalars().all()
+    return {
+        "termos": [
+            {
+                "id": t.id, "termo": t.termo, "fonte": t.fonte, "nota": t.nota,
+                "created_at": t.created_at.isoformat() if t.created_at else None,
+            }
+            for t in rows
+        ]
+    }
+
+
+@app.delete("/termos-sugeridos/{termo_id}")
+def apagar_termo_sugerido(termo_id: int, db=Depends(get_db)):
+    t = db.get(TermoSugerido, termo_id)
+    if not t:
+        raise HTTPException(status_code=404, detail="termo não encontrado")
+    db.delete(t)
+    db.commit()
+    return {"ok": True}
 
 
 def _run_dict(run: Run) -> dict:
