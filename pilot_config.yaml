@@ -250,6 +250,17 @@ discovery:
     abs_min_comments: 100   # piso bem mais alto que o hashtag (3) — canal mais ruidoso;
                             # NÃO mexe no piso do hashtag, que já provou preservar nicho pequeno
 
+  # Leva de EXPANSÃO: só entra se a leva principal (as ~30+30 palavras de sempre) não
+  # bateu target_produtos. Continua pela fila de prioridade (as palavras que sobraram
+  # fora do teto principal) até bater a meta ou esgotar o teto de páginas — o que vier
+  # primeiro. Mais seletiva que o hashtag principal (piso de comentário mais alto) e
+  # mais recente (foco em produto ativo agora), pra não gastar crédito à toa numa
+  # aposta de segunda leva.
+  expansao:
+    min_comments: 20     # piso do hashtag na expansão (era 3 na leva principal)
+    recency_days: 30     # janela da expansão (era 365 na leva principal)
+    max_paginas: 100     # teto de páginas EXTRAS no total da expansão (não por palavra)
+
 # --- Parâmetros da busca /v1/tiktok/search/top (usado por keyword_search) ----
 search:
   publish_time: "this-month"  # era "this-week" — cobre a janela de 15d+ margem; o corte

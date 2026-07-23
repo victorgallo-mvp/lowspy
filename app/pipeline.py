@@ -180,10 +180,11 @@ def run_sweep(session, cfg: dict, live: bool,
         select(Keyword).where(Keyword.ativo == True,  # noqa: E712
                               Keyword.tipo.in_(["hashtag", "top"]))
     ).scalars().all()
-    ks_max_keywords = cfg.get("discovery", {}).get("keyword_search", {}).get("max_keywords", 30)
-    # Prioridade: termos dessa lista sempre entram primeiro na busca — sem isso, o teto
-    # (max_hashtags/max_keywords) sempre corta os mesmos e os termos novos nunca são
-    # buscados. Não muda QUANTO é buscado, só a ORDEM.
+    ks_cfg = cfg.get("discovery", {}).get("keyword_search", {})
+    ks_max_keywords = ks_cfg.get("max_keywords", 30)
+    # Prioridade: termos dessa lista sempre entram primeiro na leva PRINCIPAL — sem
+    # isso, o teto (max_hashtags/max_keywords) sempre corta os mesmos e os termos
+    # novos nunca são buscados. Não muda QUANTO é buscado na leva principal, só a ORDEM.
     priority_terms = cfg.get("discovery", {}).get("prioridade", [])
 
     def _priority_key(kw):
@@ -194,7 +195,11 @@ def run_sweep(session, cfg: dict, live: bool,
 
     hashtag_kws = sorted((k for k in active_kws if k.tipo == "hashtag"), key=_priority_key)
     top_kws = sorted((k for k in active_kws if k.tipo == "top"), key=_priority_key)
-    keywords = hashtag_kws[:max_hashtags] + top_kws[:ks_max_keywords]
+    # Leva principal: as ~max_hashtags+max_keywords de sempre (prioridade primeiro).
+    # Leva de expansão: o RESTO da fila de prioridade — só usada se a principal não
+    # bater a meta (target_produtos).
+    main_keywords = hashtag_kws[:max_hashtags] + top_kws[:ks_max_keywords]
+    expansion_keywords = hashtag_kws[max_hashtags:] + top_kws[ks_max_keywords:]
 
     import time
 
@@ -213,27 +218,56 @@ def run_sweep(session, cfg: dict, live: bool,
     # Keyword livre (/search/top, tipo != "hashtag"): soma ao modo hashtag, com seus
     # próprios limites — mais recente, mais páginas, piso de comentário bem mais alto
     # (canal mais ruidoso; NÃO mexe no piso do hashtag, que já provou preservar nicho).
-    ks_cfg = cfg.get("discovery", {}).get("keyword_search", {})
     ks_recency_days = ks_cfg.get("recency_days", recency_days)
     ks_max_pages = ks_cfg.get("max_pages", max_pages)
     ks_max_items = ks_cfg.get("max_items", 9999)
     ks_min_comments = ks_cfg.get("abs_min_comments")
+    # Leva de expansão: hashtag fica mais seletiva (piso de comentário mais alto) e
+    # mais recente (foco em produto ativo agora), com teto de páginas EXTRAS no total
+    # (não por palavra) — pra não ficar buscando pra sempre num dia ruim.
+    exp_cfg = cfg.get("discovery", {}).get("expansao", {})
+    exp_min_comments = exp_cfg.get("min_comments", 20)
+    exp_recency_days = exp_cfg.get("recency_days", 30)
+    exp_max_paginas = exp_cfg.get("max_paginas", 100)
+    expansion_pages_used = 0
+    expansion_ligada = False
     now = time.time()
     # snapshot dos posts que JÁ existem no DB → novidade (visto em run anterior?)
     existing_ids = {r[0] for r in session.execute(select(Post.id)).all()}
 
-    try:
-        for kw in keywords:
-            LOG.info("Busca %s | %s/%s | %r", kw.tipo, kw.mercado, kw.sinal_esperado, kw.termo)
+    author_count: Counter = Counter()
+    max_per_author = cfg["caps"].get("max_posts_per_author", 2)
+    exigir = cfg["thresholds"].get("exigir_demanda_confirmada", False)
+    target = cfg["caps"].get("target_produtos", 9999)
+    comment_fetches = 0
+    survivors = 0
+    novos = 0
+    evaluated_ids: set = set()
+    all_candidates: list = []
+
+    def _collect(kw_list: list, expansion: bool = False) -> None:
+        nonlocal total_seen, lang_dropped, fisico_dropped, highticket_dropped
+        nonlocal nao_digital_dropped, velho_dropped, vistos_pulados, expansion_pages_used
+        for kw in kw_list:
+            if expansion and expansion_pages_used >= exp_max_paginas:
+                break  # orçamento de expansão esgotado
+            LOG.info("Busca%s %s | %s/%s | %r", " [expansão]" if expansion else "",
+                     kw.tipo, kw.mercado, kw.sinal_esperado, kw.termo)
             is_top = kw.tipo != "hashtag"
             pages_cap = ks_max_pages if is_top else max_pages
             kw_recency = ks_recency_days if is_top else recency_days
+            min_comments_override = ks_min_comments if is_top else None
+            if expansion and not is_top:  # hashtag na expansão: mais seletiva + mais recente
+                min_comments_override = exp_min_comments
+                kw_recency = exp_recency_days
             kw_cfg = cfg
-            if is_top and ks_min_comments is not None:
-                kw_cfg = {**cfg, "thresholds": {**cfg["thresholds"], "abs_min_comments": ks_min_comments}}
+            if min_comments_override is not None:
+                kw_cfg = {**cfg, "thresholds": {**cfg["thresholds"], "abs_min_comments": min_comments_override}}
             items_this_kw = 0
             cursor = None
             for _page in range(pages_cap):
+                if expansion and expansion_pages_used >= exp_max_paginas:
+                    break
                 try:
                     if kw.tipo == "hashtag":
                         items, cursor = client.search_hashtag(kw.termo, cursor)
@@ -242,6 +276,8 @@ def run_sweep(session, cfg: dict, live: bool,
                 except Exception as e:  # falha de coleta não derruba o pipeline
                     LOG.error("Busca falhou para %r: %s", kw.termo, e)
                     break
+                if expansion:
+                    expansion_pages_used += 1
                 total_seen += len(items)
                 items_this_kw += len(items)
                 if require_pt:
@@ -250,7 +286,7 @@ def run_sweep(session, cfg: dict, live: bool,
                     items = kept
                 for it in select_level0_relative(items, kw_cfg):
                     if not it.id or it.id in n0_by_id:
-                        continue  # mantém a 1ª ocorrência
+                        continue  # mantém a 1ª ocorrência (inclui já achado na leva principal)
                     if is_fisico(it.desc):  # backstop anti-físico (só digital)
                         fisico_dropped += 1
                         continue
@@ -282,28 +318,23 @@ def run_sweep(session, cfg: dict, live: bool,
                 if is_top and items_this_kw >= ks_max_items:
                     break  # teto de itens por keyword livre (o que vier primeiro)
 
-        # Upsert dos posts únicos (1 por id) — idempotente
-        for it in n0_by_id.values():
-            upsert_post(session, it, it.market)
-        session.commit()
-
-        # Dedup por autor + ordena por VIEWS (os mais virais primeiro)
-        author_count: Counter = Counter()
-        max_per_author = cfg["caps"].get("max_posts_per_author", 2)
-        candidates: list = []
-        for it in sorted(n0_by_id.values(), key=lambda x: x.statistics.play_count, reverse=True):
+    def _evaluate() -> None:
+        nonlocal comment_fetches, survivors, novos
+        # só os ainda não avaliados (evita reler comentário de post da leva principal)
+        ranked = sorted(
+            (it for it in n0_by_id.values() if it.id not in evaluated_ids),
+            key=lambda x: x.statistics.play_count, reverse=True,
+        )
+        batch: list = []
+        for it in ranked:
             if not it.url or author_count[it.author_id] >= max_per_author:
                 continue
             author_count[it.author_id] += 1
-            candidates.append(it)
+            evaluated_ids.add(it.id)
+            batch.append(it)
+        all_candidates.extend(batch)
 
-        # N1: fetch pago dos mais VIRAIS primeiro, gate de demanda, até bater a meta
-        exigir = cfg["thresholds"].get("exigir_demanda_confirmada", False)
-        target = cfg["caps"].get("target_produtos", 9999)
-        comment_fetches = 0
-        survivors = 0
-        novos = 0
-        for it in candidates:
+        for it in batch:
             if comment_fetches >= max_fetches or survivors >= target:
                 break
             cap = caption_seller_score(it.desc, cfg)
@@ -357,7 +388,25 @@ def run_sweep(session, cfg: dict, live: bool,
             LOG.info("  N1 [%s] %s%s views=%s score=%.1f | %s",
                      it.market, sinal, " NOVO" if it.novo else "",
                      it.statistics.play_count, score_val, it.desc[:40])
+
+    try:
+        # Leva principal
+        _collect(main_keywords)
+        for it in n0_by_id.values():
+            upsert_post(session, it, it.market)
         session.commit()
+        _evaluate()
+        session.commit()
+
+        # Leva de expansão: só se a principal não bateu a meta e sobrou palavra pra tentar
+        if survivors < target and expansion_keywords:
+            expansion_ligada = True
+            _collect(expansion_keywords, expansion=True)
+            for it in n0_by_id.values():
+                upsert_post(session, it, it.market)
+            session.commit()
+            _evaluate()
+            session.commit()
     finally:
         client.close()
 
@@ -374,10 +423,12 @@ def run_sweep(session, cfg: dict, live: bool,
         "nao_digital_dropados": nao_digital_dropped,
         "velhos_dropados": velho_dropped,
         "vistos_pulados": vistos_pulados,
-        "n0_posts": len(candidates),
+        "n0_posts": len(all_candidates),
         "comment_fetches": comment_fetches,
         "novos": novos,
         "sobreviventes": survivors,
+        "expansao_ligada": expansion_ligada,
+        "expansao_paginas_usadas": expansion_pages_used,
         "breadth": breadth,
         "creditos_gastos": cost.total_credits(),
         "requests": dict(cost.counts),
