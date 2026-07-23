@@ -20,6 +20,7 @@ from .db import SessionLocal, init_db
 from .models import CostLog, Post, Produto, ReversoHistorico, Run, Score, TermoSugerido
 from .pipeline import DBCost
 from .scrapecreators import DryRunClient, LiveClient
+from .schemas import facebook_ad_to_item
 from .signals import (
     caption_seller_score,
     extract_hashtags,
@@ -360,15 +361,22 @@ def reverso_meta(
                 return v
         return default
 
-    snapshot = ad.get("snapshot", {}) or {}
-    titulo = snapshot.get("title", "") or ""
-    corpo = ((snapshot.get("body") or {}).get("text", "") or "") if isinstance(snapshot.get("body"), dict) else ""
-    if not corpo:
-        for card in snapshot.get("cards") or []:
-            if isinstance(card, dict) and card.get("body"):
-                corpo = card["body"]
-                break
-    desc = f"{titulo} {corpo}".strip()
+    # reaproveita AdItem (mesmo normalizador do pipeline) em vez de reextrair na mão —
+    # já traz o fallback de dias_ativos por start_date (total_active_time vem None na
+    # prática) e o fallback de desc/cover_url por cards[] em anúncio carrossel
+    item = facebook_ad_to_item({
+        "ad_archive_id": _any(ad, "adArchiveID", "ad_archive_id", default=""),
+        "page_id": _any(ad, "pageID", "page_id", default=""),
+        "page_name": _any(ad, "pageName", "page_name", default=""),
+        "is_active": _any(ad, "isActive", "is_active"),
+        "start_date": _any(ad, "startDate", "start_date"),
+        "end_date": _any(ad, "endDate", "end_date"),
+        "total_active_time": _any(ad, "totalActiveTime", "total_active_time"),
+        "collation_count": _any(ad, "collationCount", "collation_count", default=0),
+        "publisher_platform": _any(ad, "publisherPlatform", "publisher_platform", default=[]),
+        "snapshot": ad.get("snapshot", {}) or {},
+    })
+    desc = item.desc
     cap = caption_seller_score(desc, cfg)
     digital_ok = is_digital_confirmado(desc, cfg)
     # só 1 chamada aqui (ad_details) — não dá pra medir delta de créditos (precisa de
@@ -383,9 +391,9 @@ def reverso_meta(
         legenda=desc,
         hashtags_encontradas=extract_hashtags(desc),
         preco_detectado=extract_price(desc),
-        autor=_any(ad, "pageName", "page_name", default=""),
-        dias_ativos=_any(ad, "totalActiveTime", "total_active_time"),
-        ativo=_any(ad, "isActive", "is_active"),
+        autor=item.page_name,
+        dias_ativos=item.dias_ativos,
+        ativo=item.is_active,
         sinal_legenda=cap["hits"],
         creditos_gastos=creditos,
     )
