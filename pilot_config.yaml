@@ -207,6 +207,14 @@ discovery:
       - "svg"
       - "png"
       # "digitaldownload" já existe em formato_es_en — não duplica aqui
+      # Sugeridos pelo operador via /termos-sugeridos, validados e promovidos
+      - "acessoimediato"
+      - "cliquenolink"
+      - "materialludico"
+      - "prontoparaimprimir"
+      - "recebaporemail"
+      - "dinâmicas"    # variante acentuada — hashtag é string exata, "dinamicas" já existe sem acento
+      - "exercícios"   # variante acentuada — "exercicios" já existe sem acento
     # Formato criativo/editável
     formato_criativo:
       - "templatecanva"
@@ -453,3 +461,10 @@ meta_ads:
       - "Editáveis"
       - "Imprimir"
       - "Impressos"
+      # Sugeridos pelo operador via /termos-sugeridos, validados e promovidos
+      - "Clique no Link"
+      - "Material Lúdico"
+      - "Receba por E-mail"
+      - "Material Ilustrado"
+      - "Pra Imprimir"
+      - "Por apenas R$ 29,90"
