@@ -71,6 +71,30 @@ def test_reverso_meta_exige_url(session):
     assert r.status_code == 400
 
 
+def test_reverso_tiktok_erro_na_busca_nao_quebra_o_servidor(session, monkeypatch):
+    import app.scrapecreators as sc
+
+    def _boom(self, url):
+        raise RuntimeError("scrapecreators fora do ar")
+
+    monkeypatch.setattr(sc.DryRunClient, "video_info", _boom)
+    r = client.get("/reverso/tiktok?url=https://tiktok.com/@x/video/1&dry=true")
+    assert r.status_code == 502
+    assert "detail" in r.json()
+
+
+def test_reverso_meta_erro_na_busca_nao_quebra_o_servidor(session, monkeypatch):
+    import app.scrapecreators as sc
+
+    def _boom(self, url):
+        raise RuntimeError("anúncio não existe mais")
+
+    monkeypatch.setattr(sc.DryRunClient, "ad_details", _boom)
+    r = client.get("/reverso/meta?url=https://facebook.com/ads/library/?id=1&dry=true")
+    assert r.status_code == 502
+    assert "detail" in r.json()
+
+
 def test_termos_sugeridos_cria_lista_e_apaga(session):
     r = client.post("/termos-sugeridos", json={"termo": "moldes de tricô", "fonte": "tiktok",
                                                 "nota": "vi um produto parecido validado"})

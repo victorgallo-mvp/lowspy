@@ -5,6 +5,7 @@ no startup (idempotente). LGPD: comentários de intenção sem nickname/uid.
 """
 from __future__ import annotations
 
+import logging
 import os
 from collections import defaultdict
 from contextlib import asynccontextmanager
@@ -26,6 +27,8 @@ from .signals import (
     intent_score,
     is_digital_confirmado,
 )
+
+LOG = logging.getLogger("api")
 
 
 @asynccontextmanager
@@ -255,7 +258,11 @@ def reverso_tiktok(
             raise HTTPException(status_code=500, detail="SCRAPECREATORS_API_KEY não configurada")
         client = LiveClient(config.SCRAPECREATORS_API_KEY, cost.record)
     try:
-        aweme = client.video_info(url)
+        try:
+            aweme = client.video_info(url)
+        except Exception as e:
+            LOG.error("reverso/tiktok: video_info falhou p/ %s: %s", url, e)
+            raise HTTPException(status_code=502, detail="não consegui buscar esse vídeo — confira o link")
         if not aweme:
             raise HTTPException(status_code=404, detail="vídeo não encontrado")
         try:
@@ -334,7 +341,11 @@ def reverso_meta(
             raise HTTPException(status_code=500, detail="SCRAPECREATORS_API_KEY não configurada")
         client = LiveClient(config.SCRAPECREATORS_API_KEY, cost.record)
     try:
-        ad = client.ad_details(url)
+        try:
+            ad = client.ad_details(url)
+        except Exception as e:
+            LOG.error("reverso/meta: ad_details falhou p/ %s: %s", url, e)
+            raise HTTPException(status_code=502, detail="não consegui buscar esse anúncio — confira o link")
     finally:
         client.close()
     if not ad:
