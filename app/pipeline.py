@@ -203,7 +203,7 @@ def run_sweep(session, cfg: dict, live: bool,
     fisico_dropped = 0
     velho_dropped = 0
     highticket_dropped = 0
-    nao_digital_dropped = 0  # bateu a keyword (preço/hashtag genérica) mas não confirma ser digital
+    nao_digital_dropped = 0  # só keyword-livre: bateu o termo mas não confirma ser digital
     vistos_pulados = 0
     n0_by_id: dict[str, Any] = {}  # dedup por id (mesmo post surge em várias hashtags)
     thr = cfg["thresholds"]["intent_threshold"]
@@ -257,7 +257,11 @@ def run_sweep(session, cfg: dict, live: bool,
                     if is_high_ticket(it.desc, cfg):  # queremos low-ticket
                         highticket_dropped += 1
                         continue
-                    if not is_digital_confirmado(it.desc, cfg):  # keyword sozinha não prova nada
+                    # confirmação digital só no keyword-livre (texto solto, sem sinal de
+                    # nicho) — no hashtag curada, a própria hashtag JÁ é o sinal de "é
+                    # digital" (achado: metade das hashtags não contém palavra de
+                    # confirmação no próprio nome, e isso derrubava post bom à toa)
+                    if is_top and not is_digital_confirmado(it.desc, cfg):
                         nao_digital_dropped += 1
                         continue
                     if kw_recency:  # recência: mata viral evergreen que ressurge

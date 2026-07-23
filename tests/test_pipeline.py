@@ -39,8 +39,11 @@ def test_sweep_dry_run_persists_and_scores(session):
 
 def test_run_sweep_dropa_nao_digital(session):
     # fixture tem um post de carro usado (sem nenhum termo de confirmacao_digital) —
-    # deve ser descartado mesmo passando no piso de comentário/curtida
-    _seed_keyword(session)
+    # a confirmação só roda no keyword-livre (tipo "top"); no hashtag curada não, porque
+    # a própria hashtag já é o sinal de nicho (achado: derrubava post bom à toa)
+    session.add(Keyword(termo="planilha", tipo="top", mercado="keyword_livre",
+                        sinal_esperado="vendedor", ativo=True))
+    session.commit()
     r = run_sweep(session, CFG, live=False)
     assert r["nao_digital_dropados"] >= 1
     produtos = session.query(Produto).all()
