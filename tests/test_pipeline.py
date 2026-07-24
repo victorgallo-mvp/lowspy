@@ -9,7 +9,7 @@ CFG = load_config()
 
 def _seed_keyword(session):
     session.add(
-        Keyword(termo="achadinhos", tipo="hashtag", mercado="fisico_revenda",
+        Keyword(termo="achadinhos", tipo="top", mercado="fisico_revenda",
                 sinal_esperado="demanda", ativo=True)
     )
     session.commit()
@@ -39,8 +39,7 @@ def test_sweep_dry_run_persists_and_scores(session):
 
 def test_run_sweep_dropa_nao_digital(session):
     # fixture tem um post de carro usado (sem nenhum termo de confirmacao_digital) —
-    # a confirmação só roda no keyword-livre (tipo "top"); no hashtag curada não, porque
-    # a própria hashtag já é o sinal de nicho (achado: derrubava post bom à toa)
+    # a confirmação roda sempre agora (busca é só keyword-livre)
     session.add(Keyword(termo="planilha", tipo="top", mercado="keyword_livre",
                         sinal_esperado="vendedor", ativo=True))
     session.commit()
@@ -55,22 +54,20 @@ def test_run_sweep_prioriza_termos_da_lista_prioridade(session):
     import copy
     cfg = copy.deepcopy(CFG)
     cfg["discovery"]["prioridade"] = ["zzz_prioritario"]
-    cfg["caps"]["max_hashtags"] = 1  # só 1 vaga — só quem tem prioridade deveria entrar
-    cfg["caps"]["target_produtos"] = 0  # isola a leva principal — sem expansão aqui
+    cfg["discovery"]["orcamento_total"] = 1  # só dá pra 1 request — só o termo prioritário entra
     # "existente" foi cadastrado primeiro (id menor); "zzz_prioritario" depois, mas
     # está na lista de prioridade — precisa vencer mesmo entrando por último no banco
-    session.add(Keyword(termo="existente", tipo="hashtag", mercado="formato_digital",
+    session.add(Keyword(termo="existente", tipo="top", mercado="formato_digital",
                         sinal_esperado="vendedor", ativo=True))
     session.commit()
-    session.add(Keyword(termo="zzz_prioritario", tipo="hashtag", mercado="formato_digital",
+    session.add(Keyword(termo="zzz_prioritario", tipo="top", mercado="formato_digital",
                         sinal_esperado="vendedor", ativo=True))
     session.commit()
     r = run_sweep(session, cfg, live=False)
-    assert r["requests"]["search_hashtag"] == 1  # só 1 keyword buscada na leva principal (teto=1)
-    assert not r["expansao_ligada"]
+    assert r["requests"]["search_top"] == 1  # teto de orçamento bateu logo após o 1º termo
     # a única CostLog de busca deve ser do termo prioritário, não do "existente"
-    log = session.query(CostLog).filter_by(endpoint="search_hashtag").first()
-    assert log.params["hashtag"] == "zzz_prioritario"
+    log = session.query(CostLog).filter_by(endpoint="search_top").first()
+    assert log.params["query"] == "zzz_prioritario"
 
 
 def test_sweep_is_idempotent(session):
@@ -135,86 +132,36 @@ def test_run_sweep_ignora_keyword_meta_query(session):
     assert "search_facebook_ads" not in r["requests"]
 
 
-def test_run_sweep_respeita_max_keywords_da_keyword_livre(session):
+def test_run_sweep_para_no_orcamento_total(session):
     import copy
     cfg = copy.deepcopy(CFG)
-    cfg["discovery"]["keyword_search"]["max_keywords"] = 2
-    cfg["caps"]["target_produtos"] = 0  # isola a leva principal — sem expansão aqui
+    cfg["discovery"]["orcamento_total"] = 2  # só dá pra 1 busca + 1 leitura de comentário
+    for termo in ["kw1", "kw2", "kw3"]:
+        session.add(Keyword(termo=termo, tipo="top", mercado="keyword_livre",
+                            sinal_esperado="vendedor", ativo=True))
+    session.commit()
+    r = run_sweep(session, cfg, live=False)
+    assert r["termos_tentados"] == 1  # teto bateu logo depois do 1º termo — kw2/kw3 nunca tentados
+    assert r["requests"]["search_top"] == 1
+    assert r["orcamento_usado"] <= 2
+
+
+def test_run_sweep_busca_todos_os_termos_ativos_quando_ha_orcamento(session):
+    import copy
+    cfg = copy.deepcopy(CFG)
     for termo in ["planilha", "molde", "apostila"]:
         session.add(Keyword(termo=termo, tipo="top", mercado="keyword_livre",
                             sinal_esperado="vendedor", ativo=True))
     session.commit()
     r = run_sweep(session, cfg, live=False)
-    assert r["requests"]["search_top"] == 2  # das 3 ativas, só 2 (teto) foram buscadas
-
-
-def test_run_sweep_expansao_dispara_quando_nao_bate_meta(session):
-    import copy
-    cfg = copy.deepcopy(CFG)
-    cfg["caps"]["max_hashtags"] = 1  # leva principal só cabe 1 keyword
-    session.add(Keyword(termo="kw1", tipo="hashtag", mercado="formato_digital",
-                        sinal_esperado="vendedor", ativo=True))
-    session.add(Keyword(termo="kw2", tipo="hashtag", mercado="formato_digital",
-                        sinal_esperado="vendedor", ativo=True))
-    session.commit()
-    # target_produtos default (50) não bate com só 1 keyword na fixture -> expansão liga
-    r = run_sweep(session, cfg, live=False)
-    assert r["expansao_ligada"] is True
-    assert r["requests"]["search_hashtag"] == 2  # kw1 (principal) + kw2 (expansão)
-    assert r["expansao_paginas_usadas"] >= 1
-
-
-def test_run_sweep_expansao_nao_dispara_se_bateu_meta(session):
-    import copy
-    cfg = copy.deepcopy(CFG)
-    cfg["caps"]["max_hashtags"] = 1
-    cfg["caps"]["target_produtos"] = 0  # já "bate" com 0 sobreviventes
-    session.add(Keyword(termo="kw1", tipo="hashtag", mercado="formato_digital",
-                        sinal_esperado="vendedor", ativo=True))
-    session.add(Keyword(termo="kw2", tipo="hashtag", mercado="formato_digital",
-                        sinal_esperado="vendedor", ativo=True))
-    session.commit()
-    r = run_sweep(session, cfg, live=False)
-    assert r["expansao_ligada"] is False
-    assert r["requests"]["search_hashtag"] == 1  # só a leva principal
-
-
-def test_run_sweep_expansao_respeita_teto_de_paginas(session):
-    import copy
-    cfg = copy.deepcopy(CFG)
-    cfg["caps"]["max_hashtags"] = 1
-    cfg["discovery"]["expansao"]["max_paginas"] = 1  # só 1 página extra no total
-    for termo in ["kw1", "kw2", "kw3"]:
-        session.add(Keyword(termo=termo, tipo="hashtag", mercado="formato_digital",
-                            sinal_esperado="vendedor", ativo=True))
-    session.commit()
-    r = run_sweep(session, cfg, live=False)
-    assert r["expansao_ligada"] is True
-    assert r["expansao_paginas_usadas"] <= 1
-    # kw1 (principal) + kw2 (esgota o teto de 1 página extra) — kw3 nunca é buscada
-    assert r["requests"]["search_hashtag"] == 2
-
-
-def test_run_sweep_expansao_tem_orcamento_de_leitura_proprio(session):
-    import copy
-    cfg = copy.deepcopy(CFG)
-    cfg["caps"]["max_hashtags"] = 1
-    cfg["caps"]["max_comment_fetches"] = 1  # leva principal só lê 1 comentário
-    cfg["caps"]["target_produtos"] = 999    # nunca bate sozinha — força expansão
-    cfg["discovery"]["expansao"]["max_comment_fetches_extra"] = 2  # +2 só pra expansão
-    for termo in ["kw1", "kw2"]:
-        session.add(Keyword(termo=termo, tipo="hashtag", mercado="formato_digital",
-                            sinal_esperado="vendedor", ativo=True))
-    session.commit()
-    r = run_sweep(session, cfg, live=False)
-    assert r["expansao_ligada"] is True
-    # sem o orçamento extra pararia em 1 — com ele, passa do teto principal
-    assert r["comment_fetches"] > 1
-    assert r["comment_fetches"] <= 3  # 1 (principal) + 2 (extra), nunca mais que isso
+    # com orçamento de sobra (padrão 1000), busca é sempre por keyword-livre e cobre
+    # TODOS os termos ativos — sem teto de "max_keywords" cortando a fila
+    assert r["termos_tentados"] == 3
+    assert r["termos_disponiveis"] == 3
 
 
 def test_run_sweep_grava_termo_origem(session):
-    session.add(Keyword(termo="apostila", tipo="hashtag", mercado="formato_digital",
+    session.add(Keyword(termo="apostila", tipo="top", mercado="formato_digital",
                         sinal_esperado="vendedor", ativo=True))
     session.commit()
     run_sweep(session, CFG, live=False)

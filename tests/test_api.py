@@ -10,7 +10,7 @@ client = TestClient(app)
 
 
 def _seed_and_sweep(session):
-    session.add(Keyword(termo="achadinhos", tipo="hashtag", mercado="fisico_revenda",
+    session.add(Keyword(termo="achadinhos", tipo="top", mercado="fisico_revenda",
                         sinal_esperado="demanda", ativo=True))
     session.commit()
     run_sweep(session, CFG, live=False)
@@ -173,7 +173,7 @@ def _wait_run(run_id, tries=60):
 
 
 def test_varredura_dispara_assincrono(session):
-    session.add(Keyword(termo="achadinhos", tipo="hashtag", mercado="fisico_revenda",
+    session.add(Keyword(termo="achadinhos", tipo="top", mercado="fisico_revenda",
                         sinal_esperado="demanda", ativo=True))
     session.commit()
     r = client.post("/varredura?dry=true")  # dry = gasto zero
@@ -185,7 +185,7 @@ def test_varredura_dispara_assincrono(session):
 
 
 def test_varreduras_lista_e_filtro_por_run(session):
-    session.add(Keyword(termo="achadinhos", tipo="hashtag", mercado="fisico_revenda",
+    session.add(Keyword(termo="achadinhos", tipo="top", mercado="fisico_revenda",
                         sinal_esperado="demanda", ativo=True))
     session.commit()
     r = client.post("/varredura?dry=true")

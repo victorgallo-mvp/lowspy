@@ -144,17 +144,23 @@ intencao:
   - "send me the link"
 
 # --- Estratégia de descoberta -----------------------------------------------
-# mode: "hashtag" (recomendado — acha vendedor de nicho) ou "top" (busca por query)
+# Busca é SÓ keyword-livre (/search/top, texto solto) — hashtag deixou de ser canal
+# de busca próprio (era /search/hashtag). As MESMAS palavras abaixo (mercados) viram
+# keyword-livre automaticamente via seed_keywords.py — "markets" aqui é só a origem
+# do vocabulário, não dispara mais chamada de hashtag.
 discovery:
-  mode: "hashtag"
-  # Metodologia do operador: minera FORMATO + PRECIFICAÇÃO, não nicho. Cada hashtag
-  # vira uma chamada /search/hashtag. Mercados ligáveis/desligáveis.
+  # Metodologia do operador: minera FORMATO + PRECIFICAÇÃO, não nicho. Mercados
+  # ligáveis/desligáveis — controla o que entra no pool de keyword-livre.
   enabled_markets: ["formato_digital", "formato_criativo", "formato_es_en"]  # digital, pt+es+en
   pular_vistos: true   # novidade na fonte: pula posts já vistos em runs anteriores
-  # Termos que devem ser buscados PRIMEIRO, antes de qualquer outro — sem isso, o teto
-  # de max_hashtags/keyword_search.max_keywords corta sempre os mesmos (os mais antigos
-  # no banco) e os termos novos nunca são buscados. Não muda a QUANTIDADE buscada, só
-  # a ordem — garante que esses sempre entram dentro do teto.
+  # Teto ÚNICO de créditos pro run inteiro (busca + leitura de comentário somadas).
+  # Para tudo ao bater esse número, não importa quantas palavras restam ou se a meta
+  # de produtos foi batida — sem isso, com o pool de 100+ palavras, o run não teria
+  # fim natural.
+  orcamento_total: 1000
+  # Termos que devem ser buscados PRIMEIRO, antes de qualquer outro — sem isso, os
+  # termos novos sempre ficariam pro final da fila. Não muda o teto de gasto, só a
+  # ordem — garante que esses sejam tentados cedo.
   prioridade:
     - "pdf"
     - "arquivopdf"
@@ -234,37 +240,19 @@ discovery:
       - "lojade10"
       - "importados"
 
-  # Busca por KEYWORD LIVRE (query direta em /search/top, não hashtag) — soma ao modo
-  # hashtag, não substitui (achado: muito conteúdo válido não usa as hashtags curadas).
-  # Sem lista própria: reaproveita as MESMAS palavras já usadas (hashtags dos mercados
-  # ativos + termos do Meta Ads/PDF) — derivado em seed_keywords.py, não duplicado aqui.
+  # Busca por KEYWORD LIVRE (/search/top, texto solto) — ÚNICO canal de busca agora.
+  # Sem lista própria: reaproveita as MESMAS palavras já usadas (mercados ativos +
+  # termos do Meta Ads/PDF) — derivado em seed_keywords.py, não duplicado aqui.
   keyword_search:
     enabled: true
-    recency_days: 15       # mais curto que o hashtag (365d) — keyword livre traz
-                            # conteúdo mais solto/genérico, prioriza o mais fresco
-    max_pages: 10
+    recency_days: 15       # foco em produto ativo agora, não garimpo de post antigo
+    max_pages: 10           # teto MÁXIMO por palavra — a paginação adaptativa (abaixo)
+                            # costuma parar bem antes disso quando o rendimento cai
     max_items: 50           # teto por keyword — o que vier primeiro entre páginas e itens
-    max_keywords: 30        # teto de termos livres buscados por run — as 61 palavras
-                            # derivadas cabem em mais de 1 run (novidade já evita repetir);
-                            # sem isso, 61 termos x 10 páginas explode custo/tempo do run
-    abs_min_comments: 100   # piso bem mais alto que o hashtag (3) — canal mais ruidoso;
-                            # NÃO mexe no piso do hashtag, que já provou preservar nicho pequeno
-
-  # Leva de EXPANSÃO: só entra se a leva principal (as ~30+30 palavras de sempre) não
-  # bateu target_produtos. Continua pela fila de prioridade (as palavras que sobraram
-  # fora do teto principal) até bater a meta ou esgotar o teto de páginas — o que vier
-  # primeiro. Mais seletiva que o hashtag principal (piso de comentário mais alto) e
-  # mais recente (foco em produto ativo agora), pra não gastar crédito à toa numa
-  # aposta de segunda leva.
-  expansao:
-    min_comments: 20     # piso do hashtag na expansão (era 3 na leva principal)
-    recency_days: 30     # janela da expansão (era 365 na leva principal)
-    max_paginas: 100     # teto de páginas EXTRAS no total da expansão (não por palavra)
-    max_comment_fetches_extra: 200  # orçamento de leitura de comentário SÓ da expansão,
-                                     # somado por cima do teto principal — sem isso, a
-                                     # leva principal sozinha já esgota o teto de leitura
-                                     # e o que a expansão acha nunca chega a ser avaliado
-                                     # (achado na run #28: 254 candidatos, só 200 lidos)
+    min_novos_por_pagina: 1 # paginação por RENDIMENTO: se uma página render menos que
+                            # isso de candidato novo, para essa palavra e troca pra
+                            # próxima da fila, em vez de continuar cavando fundo à toa
+    abs_min_comments: 100   # piso alto — busca livre é mais ruidosa que hashtag curada
 
 # --- Parâmetros da busca /v1/tiktok/search/top (usado por keyword_search) ----
 search:
@@ -281,11 +269,11 @@ language:
 # Cada hashtag contribui com seus MELHORES posts (breadth), com piso absoluto
 # baixo só pra dropar post morto. Evita matar nicho de baixo engajamento.
 thresholds:
-  abs_min_comments: 3      # piso absoluto (dropa post morto)
+  abs_min_comments: 3      # piso absoluto base (a busca keyword-livre sobrescreve pra 100,
+                            # ver discovery.keyword_search.abs_min_comments)
   abs_min_likes: 10
-  relative_top_frac: 1.0   # mantém TODOS de cada hashtag (mais oferta)
+  relative_top_frac: 1.0   # mantém TODOS de cada keyword (mais oferta)
   intent_threshold: 2.0    # Nível 1: score mínimo pra sobreviver (afrouxado p/ + resultados)
-  recency_days: 365        # infoproduto é evergreen; janela larga p/ mais oferta (era 180 — 51% do total_buscado morria aqui)
   exigir_demanda_confirmada: true  # modo teste: só produtos com demanda confirmada no comentário
 
 # --- Score final: demanda dominante + engajamento ponderado (Bloco 3) -------
@@ -382,13 +370,9 @@ weights:
 
 # --- Caps do run --live (escala "enxuto ~50 créditos") ----------------------
 caps:
-  max_search_pages: 1        # páginas de busca por keyword
-  max_hashtags: 30           # teto de chamadas /search/hashtag no run (cobre pt+es+en)
-  max_comment_fetches: 300   # era 200 — a expansão agora acha mais candidato (254 na
-                              # run #28) do que esse teto dava conta de avaliar
   max_posts_per_author: 2    # dedup: até N posts do mesmo autor (variedade + volume)
-  max_pages_per_hashtag: 5   # pagina fundo p/ oferta + achar inéditos
-  target_produtos: 50        # para de gastar fetch ao atingir a meta (era 30 — subiu junto c/ fetch)
+  target_produtos: 50        # para de buscar/avaliar ao atingir a meta (ou o teto de
+                              # discovery.orcamento_total, o que vier primeiro)
 
 # --- Precificação (ajustar ao teu plano) ------------------------------------
 pricing:

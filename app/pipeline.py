@@ -163,9 +163,17 @@ def run_sweep(session, cfg: dict, live: bool,
               max_hashtags: Optional[int] = None,
               max_comment_fetches: Optional[int] = None,
               run_id: Optional[int] = None) -> dict[str, Any]:
-    caps = cfg["caps"]
-    max_hashtags = max_hashtags or caps.get("max_hashtags", 999)
-    max_fetches = max_comment_fetches or caps.get("max_comment_fetches", 999)
+    """Busca é só keyword-livre agora (/search/top) — hashtag deixou de ser canal de
+    busca próprio (era /search/hashtag). As mesmas palavras (mercados do discovery)
+    já entram como keyword-livre via seed_keywords.py, então nada se perde.
+
+    Palavra por palavra (por prioridade), busca+avalia JUNTO (intercalado) — nunca
+    gasta tudo em busca antes de ler comentário. Um teto ÚNICO de créditos
+    (discovery.orcamento_total) cobre busca+leitura somadas e para o run inteiro.
+
+    `max_hashtags`/`max_comment_fetches`: parâmetros legados (CLI/--max-hashtags),
+    sem efeito no novo desenho — mantidos só por compatibilidade de assinatura.
+    """
     require_pt = cfg.get("language", {}).get("require_ptbr", False)
 
     cost = DBCost(session)
@@ -177,14 +185,10 @@ def run_sweep(session, cfg: dict, live: bool,
         client = DryRunClient(cost.record)
 
     active_kws = session.execute(
-        select(Keyword).where(Keyword.ativo == True,  # noqa: E712
-                              Keyword.tipo.in_(["hashtag", "top"]))
+        select(Keyword).where(Keyword.ativo == True, Keyword.tipo == "top")  # noqa: E712
     ).scalars().all()
-    ks_cfg = cfg.get("discovery", {}).get("keyword_search", {})
-    ks_max_keywords = ks_cfg.get("max_keywords", 30)
-    # Prioridade: termos dessa lista sempre entram primeiro na leva PRINCIPAL — sem
-    # isso, o teto (max_hashtags/max_keywords) sempre corta os mesmos e os termos
-    # novos nunca são buscados. Não muda QUANTO é buscado na leva principal, só a ORDEM.
+    # Prioridade: termos dessa lista sempre entram primeiro na fila — sem isso, os
+    # termos novos sempre ficariam pro final. Não muda o teto de gasto, só a ORDEM.
     priority_terms = cfg.get("discovery", {}).get("prioridade", [])
 
     def _priority_key(kw):
@@ -193,13 +197,20 @@ def run_sweep(session, cfg: dict, live: bool,
         except ValueError:
             return (1, 0)
 
-    hashtag_kws = sorted((k for k in active_kws if k.tipo == "hashtag"), key=_priority_key)
-    top_kws = sorted((k for k in active_kws if k.tipo == "top"), key=_priority_key)
-    # Leva principal: as ~max_hashtags+max_keywords de sempre (prioridade primeiro).
-    # Leva de expansão: o RESTO da fila de prioridade — só usada se a principal não
-    # bater a meta (target_produtos).
-    main_keywords = hashtag_kws[:max_hashtags] + top_kws[:ks_max_keywords]
-    expansion_keywords = hashtag_kws[max_hashtags:] + top_kws[ks_max_keywords:]
+    keywords = sorted(active_kws, key=_priority_key)
+
+    ks_cfg = cfg.get("discovery", {}).get("keyword_search", {})
+    ks_recency_days = ks_cfg.get("recency_days", 15)
+    ks_max_pages = ks_cfg.get("max_pages", 10)      # teto MÁXIMO por palavra
+    ks_max_items = ks_cfg.get("max_items", 9999)
+    ks_min_comments = ks_cfg.get("abs_min_comments", 100)
+    ks_min_novos_pagina = ks_cfg.get("min_novos_por_pagina", 1)  # paginação por rendimento
+    keyword_cfg = {**cfg, "thresholds": {**cfg["thresholds"], "abs_min_comments": ks_min_comments}}
+    # Teto ÚNICO de créditos pro run inteiro (busca + leitura de comentário somadas) —
+    # sem isso, com o pool de 100+ palavras, o run não teria fim natural num dia ruim.
+    orcamento_total = cfg.get("discovery", {}).get("orcamento_total", 1000)
+    if max_comment_fetches:  # override legado (CLI) — ainda serve pra ajustar o teto
+        orcamento_total = max_comment_fetches
 
     import time
 
@@ -208,30 +219,11 @@ def run_sweep(session, cfg: dict, live: bool,
     fisico_dropped = 0
     velho_dropped = 0
     highticket_dropped = 0
-    nao_digital_dropped = 0  # só keyword-livre: bateu o termo mas não confirma ser digital
+    nao_digital_dropped = 0  # bateu o termo mas não confirma ser digital
     vistos_pulados = 0
-    n0_by_id: dict[str, Any] = {}  # dedup por id (mesmo post surge em várias hashtags)
+    n0_by_id: dict[str, Any] = {}  # dedup por id (mesmo post surge em várias buscas)
     thr = cfg["thresholds"]["intent_threshold"]
-    recency_days = cfg["thresholds"].get("recency_days")
-    max_pages = cfg["caps"].get("max_pages_per_hashtag", 1)
     pular_vistos = cfg.get("discovery", {}).get("pular_vistos", False)
-    # Keyword livre (/search/top, tipo != "hashtag"): soma ao modo hashtag, com seus
-    # próprios limites — mais recente, mais páginas, piso de comentário bem mais alto
-    # (canal mais ruidoso; NÃO mexe no piso do hashtag, que já provou preservar nicho).
-    ks_recency_days = ks_cfg.get("recency_days", recency_days)
-    ks_max_pages = ks_cfg.get("max_pages", max_pages)
-    ks_max_items = ks_cfg.get("max_items", 9999)
-    ks_min_comments = ks_cfg.get("abs_min_comments")
-    # Leva de expansão: hashtag fica mais seletiva (piso de comentário mais alto) e
-    # mais recente (foco em produto ativo agora), com teto de páginas EXTRAS no total
-    # (não por palavra) — pra não ficar buscando pra sempre num dia ruim.
-    exp_cfg = cfg.get("discovery", {}).get("expansao", {})
-    exp_min_comments = exp_cfg.get("min_comments", 20)
-    exp_recency_days = exp_cfg.get("recency_days", 30)
-    exp_max_paginas = exp_cfg.get("max_paginas", 100)
-    exp_max_fetches_extra = exp_cfg.get("max_comment_fetches_extra", 0)
-    expansion_pages_used = 0
-    expansion_ligada = False
     now = time.time()
     # snapshot dos posts que JÁ existem no DB → novidade (visto em run anterior?)
     existing_ids = {r[0] for r in session.execute(select(Post.id)).all()}
@@ -243,87 +235,74 @@ def run_sweep(session, cfg: dict, live: bool,
     comment_fetches = 0
     survivors = 0
     novos = 0
-    ranked_ids: set = set()   # já passou pelo autor-dedup (evita duplicar/re-contar autor)
-    all_candidates: list = []  # fila ordenada por views, cresce a cada leva
+    termos_tentados = 0
+    ranked_ids: set = set()    # já passou pelo autor-dedup (evita duplicar/re-contar autor)
+    all_candidates: list = []  # fila ordenada por views, cresce a cada palavra
     fetch_idx = 0               # até onde já tentamos ler comentário em all_candidates
 
-    def _collect(kw_list: list, expansion: bool = False) -> None:
+    def _gasto_total() -> int:
+        """Créditos gastos até agora (busca + leitura) — medido real via
+        credits_remaining quando disponível, senão soma de requests (~1 crédito/req)."""
+        c = cost.total_credits()
+        return c if c is not None else sum(cost.counts.values())
+
+    def _collect_termo(kw) -> None:
         nonlocal total_seen, lang_dropped, fisico_dropped, highticket_dropped
-        nonlocal nao_digital_dropped, velho_dropped, vistos_pulados, expansion_pages_used
-        for kw in kw_list:
-            if expansion and expansion_pages_used >= exp_max_paginas:
-                break  # orçamento de expansão esgotado
-            LOG.info("Busca%s %s | %s/%s | %r", " [expansão]" if expansion else "",
-                     kw.tipo, kw.mercado, kw.sinal_esperado, kw.termo)
-            is_top = kw.tipo != "hashtag"
-            pages_cap = ks_max_pages if is_top else max_pages
-            kw_recency = ks_recency_days if is_top else recency_days
-            min_comments_override = ks_min_comments if is_top else None
-            if expansion and not is_top:  # hashtag na expansão: mais seletiva + mais recente
-                min_comments_override = exp_min_comments
-                kw_recency = exp_recency_days
-            kw_cfg = cfg
-            if min_comments_override is not None:
-                kw_cfg = {**cfg, "thresholds": {**cfg["thresholds"], "abs_min_comments": min_comments_override}}
-            items_this_kw = 0
-            cursor = None
-            for _page in range(pages_cap):
-                if expansion and expansion_pages_used >= exp_max_paginas:
-                    break
-                try:
-                    if kw.tipo == "hashtag":
-                        items, cursor = client.search_hashtag(kw.termo, cursor)
-                    else:
-                        items, cursor = client.search_top(kw.termo, cfg, cursor)
-                except Exception as e:  # falha de coleta não derruba o pipeline
-                    LOG.error("Busca falhou para %r: %s", kw.termo, e)
-                    break
-                if expansion:
-                    expansion_pages_used += 1
-                total_seen += len(items)
-                items_this_kw += len(items)
-                if require_pt:
-                    kept = [it for it in items if lang_allowed(it.desc)]
-                    lang_dropped += len(items) - len(kept)
-                    items = kept
-                for it in select_level0_relative(items, kw_cfg):
-                    if not it.id or it.id in n0_by_id:
-                        continue  # mantém a 1ª ocorrência (inclui já achado na leva principal)
-                    if is_fisico(it.desc):  # backstop anti-físico (só digital)
-                        fisico_dropped += 1
+        nonlocal nao_digital_dropped, velho_dropped, vistos_pulados
+        cursor = None
+        items_this_kw = 0
+        for _page in range(ks_max_pages):
+            if _gasto_total() >= orcamento_total:
+                return
+            try:
+                items, cursor = client.search_top(kw.termo, cfg, cursor)
+            except Exception as e:  # falha de coleta não derruba o pipeline
+                LOG.error("Busca falhou para %r: %s", kw.termo, e)
+                return
+            total_seen += len(items)
+            items_this_kw += len(items)
+            if require_pt:
+                kept = [it for it in items if lang_allowed(it.desc)]
+                lang_dropped += len(items) - len(kept)
+                items = kept
+            novos_na_pagina = 0
+            for it in select_level0_relative(items, keyword_cfg):
+                if not it.id or it.id in n0_by_id:
+                    continue  # mantém a 1ª ocorrência
+                if is_fisico(it.desc):  # backstop anti-físico (só digital)
+                    fisico_dropped += 1
+                    continue
+                if is_high_ticket(it.desc, cfg):  # queremos low-ticket
+                    highticket_dropped += 1
+                    continue
+                if not is_digital_confirmado(it.desc, cfg):  # o termo sozinho não prova nada
+                    nao_digital_dropped += 1
+                    continue
+                if ks_recency_days:  # recência: foco em produto ativo agora
+                    ct = it.ct_int()
+                    if ct and (now - float(ct)) > ks_recency_days * 86400:
+                        velho_dropped += 1
                         continue
-                    if is_high_ticket(it.desc, cfg):  # queremos low-ticket
-                        highticket_dropped += 1
-                        continue
-                    # confirmação digital só no keyword-livre (texto solto, sem sinal de
-                    # nicho) — no hashtag curada, a própria hashtag JÁ é o sinal de "é
-                    # digital" (achado: metade das hashtags não contém palavra de
-                    # confirmação no próprio nome, e isso derrubava post bom à toa)
-                    if is_top and not is_digital_confirmado(it.desc, cfg):
-                        nao_digital_dropped += 1
-                        continue
-                    if kw_recency:  # recência: mata viral evergreen que ressurge
-                        ct = it.ct_int()
-                        if ct and (now - float(ct)) > kw_recency * 86400:
-                            velho_dropped += 1
-                            continue
-                    it.market = kw.mercado
-                    it.sinal_esperado = kw.sinal_esperado
-                    it.termo_origem = kw.termo
-                    it.novo = it.id not in existing_ids  # NOVIDADE
-                    if pular_vistos and not it.novo:  # novidade na fonte: pula já visto
-                        vistos_pulados += 1
-                        continue
-                    n0_by_id[it.id] = it
-                if not cursor:
-                    break  # sem próxima página
-                if is_top and items_this_kw >= ks_max_items:
-                    break  # teto de itens por keyword livre (o que vier primeiro)
+                it.market = kw.mercado
+                it.sinal_esperado = kw.sinal_esperado
+                it.termo_origem = kw.termo
+                it.novo = it.id not in existing_ids  # NOVIDADE
+                if pular_vistos and not it.novo:  # novidade na fonte: pula já visto
+                    vistos_pulados += 1
+                    continue
+                n0_by_id[it.id] = it
+                novos_na_pagina += 1
+            if not cursor:
+                break  # sem próxima página
+            if items_this_kw >= ks_max_items:
+                break  # teto de itens por palavra (o que vier primeiro)
+            if novos_na_pagina < ks_min_novos_pagina:
+                break  # rendimento caiu — troca de palavra em vez de cavar mais fundo
 
     def _rank_new_candidates() -> None:
         """Autor-dedup + ranking por views dos itens NOVOS de n0_by_id (desde a
         última chamada) — soma na lista de candidatos sem mexer nos que já estão
-        lá (um item ranqueado mas ainda não lido continua na fila pra próxima leva)."""
+        lá (um item ranqueado mas ainda não lido continua na fila pra próxima palavra)."""
         novos_itens = sorted(
             (it for it in n0_by_id.values() if it.id not in ranked_ids),
             key=lambda x: x.statistics.play_count, reverse=True,
@@ -338,9 +317,9 @@ def run_sweep(session, cfg: dict, live: bool,
     def _evaluate() -> None:
         nonlocal comment_fetches, survivors, novos, fetch_idx
         # continua de onde parou (fetch_idx) — não relê quem já foi lido antes, e um
-        # item ranqueado mas não lido por falta de orçamento fica na fila pra próxima leva
+        # item ranqueado mas não lido por falta de orçamento fica na fila pra próxima palavra
         while fetch_idx < len(all_candidates):
-            if comment_fetches >= max_fetches or survivors >= target:
+            if survivors >= target or _gasto_total() >= orcamento_total:
                 break
             it = all_candidates[fetch_idx]
             fetch_idx += 1
@@ -397,23 +376,12 @@ def run_sweep(session, cfg: dict, live: bool,
                      it.statistics.play_count, score_val, it.desc[:40])
 
     try:
-        # Leva principal
-        _collect(main_keywords)
-        for it in n0_by_id.values():
-            upsert_post(session, it, it.market)
-        session.commit()
-        _rank_new_candidates()
-        _evaluate()
-        session.commit()
-
-        # Leva de expansão: só se a principal não bateu a meta e sobrou palavra pra tentar
-        if survivors < target and expansion_keywords:
-            expansion_ligada = True
-            # orçamento de leitura de comentário SÓ da expansão, somado por cima do
-            # teto principal — senão a leva principal sozinha já esgota o teto e o que
-            # a expansão acha nunca chega a ser avaliado
-            max_fetches += exp_max_fetches_extra
-            _collect(expansion_keywords, expansion=True)
+        for kw in keywords:
+            if survivors >= target or _gasto_total() >= orcamento_total:
+                break
+            termos_tentados += 1
+            LOG.info("Busca keyword-livre | %s/%s | %r", kw.mercado, kw.sinal_esperado, kw.termo)
+            _collect_termo(kw)
             for it in n0_by_id.values():
                 upsert_post(session, it, it.market)
             session.commit()
@@ -440,8 +408,10 @@ def run_sweep(session, cfg: dict, live: bool,
         "comment_fetches": comment_fetches,
         "novos": novos,
         "sobreviventes": survivors,
-        "expansao_ligada": expansion_ligada,
-        "expansao_paginas_usadas": expansion_pages_used,
+        "termos_tentados": termos_tentados,
+        "termos_disponiveis": len(keywords),
+        "orcamento_usado": _gasto_total(),
+        "orcamento_total": orcamento_total,
         "breadth": breadth,
         "creditos_gastos": cost.total_credits(),
         "requests": dict(cost.counts),
