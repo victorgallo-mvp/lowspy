@@ -260,6 +260,11 @@ discovery:
     min_comments: 20     # piso do hashtag na expansão (era 3 na leva principal)
     recency_days: 30     # janela da expansão (era 365 na leva principal)
     max_paginas: 100     # teto de páginas EXTRAS no total da expansão (não por palavra)
+    max_comment_fetches_extra: 200  # orçamento de leitura de comentário SÓ da expansão,
+                                     # somado por cima do teto principal — sem isso, a
+                                     # leva principal sozinha já esgota o teto de leitura
+                                     # e o que a expansão acha nunca chega a ser avaliado
+                                     # (achado na run #28: 254 candidatos, só 200 lidos)
 
 # --- Parâmetros da busca /v1/tiktok/search/top (usado por keyword_search) ----
 search:
@@ -379,7 +384,8 @@ weights:
 caps:
   max_search_pages: 1        # páginas de busca por keyword
   max_hashtags: 30           # teto de chamadas /search/hashtag no run (cobre pt+es+en)
-  max_comment_fetches: 200   # teto de fetches (era 100 — batia antes de avaliar os ~288 candidatos do N0)
+  max_comment_fetches: 300   # era 200 — a expansão agora acha mais candidato (254 na
+                              # run #28) do que esse teto dava conta de avaliar
   max_posts_per_author: 2    # dedup: até N posts do mesmo autor (variedade + volume)
   max_pages_per_hashtag: 5   # pagina fundo p/ oferta + achar inéditos
   target_produtos: 50        # para de gastar fetch ao atingir a meta (era 30 — subiu junto c/ fetch)

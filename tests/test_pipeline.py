@@ -195,6 +195,24 @@ def test_run_sweep_expansao_respeita_teto_de_paginas(session):
     assert r["requests"]["search_hashtag"] == 2
 
 
+def test_run_sweep_expansao_tem_orcamento_de_leitura_proprio(session):
+    import copy
+    cfg = copy.deepcopy(CFG)
+    cfg["caps"]["max_hashtags"] = 1
+    cfg["caps"]["max_comment_fetches"] = 1  # leva principal só lê 1 comentário
+    cfg["caps"]["target_produtos"] = 999    # nunca bate sozinha — força expansão
+    cfg["discovery"]["expansao"]["max_comment_fetches_extra"] = 2  # +2 só pra expansão
+    for termo in ["kw1", "kw2"]:
+        session.add(Keyword(termo=termo, tipo="hashtag", mercado="formato_digital",
+                            sinal_esperado="vendedor", ativo=True))
+    session.commit()
+    r = run_sweep(session, cfg, live=False)
+    assert r["expansao_ligada"] is True
+    # sem o orçamento extra pararia em 1 — com ele, passa do teto principal
+    assert r["comment_fetches"] > 1
+    assert r["comment_fetches"] <= 3  # 1 (principal) + 2 (extra), nunca mais que isso
+
+
 def test_run_sweep_grava_termo_origem(session):
     session.add(Keyword(termo="apostila", tipo="hashtag", mercado="formato_digital",
                         sinal_esperado="vendedor", ativo=True))

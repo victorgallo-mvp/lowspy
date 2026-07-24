@@ -229,6 +229,7 @@ def run_sweep(session, cfg: dict, live: bool,
     exp_min_comments = exp_cfg.get("min_comments", 20)
     exp_recency_days = exp_cfg.get("recency_days", 30)
     exp_max_paginas = exp_cfg.get("max_paginas", 100)
+    exp_max_fetches_extra = exp_cfg.get("max_comment_fetches_extra", 0)
     expansion_pages_used = 0
     expansion_ligada = False
     now = time.time()
@@ -242,8 +243,9 @@ def run_sweep(session, cfg: dict, live: bool,
     comment_fetches = 0
     survivors = 0
     novos = 0
-    evaluated_ids: set = set()
-    all_candidates: list = []
+    ranked_ids: set = set()   # já passou pelo autor-dedup (evita duplicar/re-contar autor)
+    all_candidates: list = []  # fila ordenada por views, cresce a cada leva
+    fetch_idx = 0               # até onde já tentamos ler comentário em all_candidates
 
     def _collect(kw_list: list, expansion: bool = False) -> None:
         nonlocal total_seen, lang_dropped, fisico_dropped, highticket_dropped
@@ -318,25 +320,30 @@ def run_sweep(session, cfg: dict, live: bool,
                 if is_top and items_this_kw >= ks_max_items:
                     break  # teto de itens por keyword livre (o que vier primeiro)
 
-    def _evaluate() -> None:
-        nonlocal comment_fetches, survivors, novos
-        # só os ainda não avaliados (evita reler comentário de post da leva principal)
-        ranked = sorted(
-            (it for it in n0_by_id.values() if it.id not in evaluated_ids),
+    def _rank_new_candidates() -> None:
+        """Autor-dedup + ranking por views dos itens NOVOS de n0_by_id (desde a
+        última chamada) — soma na lista de candidatos sem mexer nos que já estão
+        lá (um item ranqueado mas ainda não lido continua na fila pra próxima leva)."""
+        novos_itens = sorted(
+            (it for it in n0_by_id.values() if it.id not in ranked_ids),
             key=lambda x: x.statistics.play_count, reverse=True,
         )
-        batch: list = []
-        for it in ranked:
+        for it in novos_itens:
+            ranked_ids.add(it.id)
             if not it.url or author_count[it.author_id] >= max_per_author:
                 continue
             author_count[it.author_id] += 1
-            evaluated_ids.add(it.id)
-            batch.append(it)
-        all_candidates.extend(batch)
+            all_candidates.append(it)
 
-        for it in batch:
+    def _evaluate() -> None:
+        nonlocal comment_fetches, survivors, novos, fetch_idx
+        # continua de onde parou (fetch_idx) — não relê quem já foi lido antes, e um
+        # item ranqueado mas não lido por falta de orçamento fica na fila pra próxima leva
+        while fetch_idx < len(all_candidates):
             if comment_fetches >= max_fetches or survivors >= target:
                 break
+            it = all_candidates[fetch_idx]
+            fetch_idx += 1
             cap = caption_seller_score(it.desc, cfg)
             try:
                 comments = client.video_comments(it.url)
@@ -395,16 +402,22 @@ def run_sweep(session, cfg: dict, live: bool,
         for it in n0_by_id.values():
             upsert_post(session, it, it.market)
         session.commit()
+        _rank_new_candidates()
         _evaluate()
         session.commit()
 
         # Leva de expansão: só se a principal não bateu a meta e sobrou palavra pra tentar
         if survivors < target and expansion_keywords:
             expansion_ligada = True
+            # orçamento de leitura de comentário SÓ da expansão, somado por cima do
+            # teto principal — senão a leva principal sozinha já esgota o teto e o que
+            # a expansão acha nunca chega a ser avaliado
+            max_fetches += exp_max_fetches_extra
             _collect(expansion_keywords, expansion=True)
             for it in n0_by_id.values():
                 upsert_post(session, it, it.market)
             session.commit()
+            _rank_new_candidates()
             _evaluate()
             session.commit()
     finally:
