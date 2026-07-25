@@ -158,11 +158,14 @@ def test_run_sweep_usa_search_top_para_keyword_livre(session):
                         sinal_esperado="vendedor", ativo=True))
     session.commit()
     r = run_sweep(session, CFG, live=False)
-    assert r["requests"].get("search_top") == 1
+    # 1 termo x 3 ordenações (relevance/most-liked/date-posted) = 3 buscas — o mesmo
+    # termo em cada ordenação devolve listas diferentes (multiplicador de oferta)
+    assert r["requests"].get("search_top") == 3
     assert r["requests"].get("search_hashtag") is None  # canal de hashtag foi aposentado
     # fixture tem 5 itens (8/87/132/150/214 comentários); o piso de keyword_search é
     # 30 -> os 4 com >=30 comentários entram no funil (mercado curado dispensa
-    # confirmação na legenda, então até o post do "Corsa" passa aqui)
+    # confirmação na legenda, então até o post do "Corsa" passa aqui); as 3 ordenações
+    # devolvem os MESMOS itens no dry-run -> dedup segura em 4
     assert r["n0_posts"] == 4
 
 
@@ -180,6 +183,7 @@ def test_run_sweep_para_no_orcamento_total(session):
     import copy
     cfg = copy.deepcopy(CFG)
     cfg["discovery"]["orcamento_total"] = 2  # só dá pra 1 busca + 1 leitura de comentário
+    cfg["discovery"]["keyword_search"]["sort_modes"] = ["relevance"]  # isola o teto de gasto
     for termo in ["kw1", "kw2", "kw3"]:
         session.add(Keyword(termo=termo, tipo="top", mercado="keyword_livre",
                             sinal_esperado="vendedor", ativo=True))
@@ -202,6 +206,38 @@ def test_run_sweep_busca_todos_os_termos_ativos_quando_ha_orcamento(session):
     # TODOS os termos ativos — sem teto de "max_keywords" cortando a fila
     assert r["termos_tentados"] == 3
     assert r["termos_disponiveis"] == 3
+
+
+def test_run_sweep_segunda_chance_le_mais_uma_pagina(session):
+    # quase-aprovado: 1ª página rende 2-3 comentários secos (mínimo é 4) — em vez de
+    # descartar, lê MAIS UMA página de comentários (+1 crédito); se os "eu quero" que
+    # faltavam estiverem lá, o post se salva
+    from app.scrapecreators import DryRunClient
+    from app.schemas import CommentSchema
+
+    class DoisPaginasClient(DryRunClient):
+        def video_comments(self, url, cursor=None):
+            self._spend("video_comments", {"url": url, "cursor": cursor})
+            if cursor is None:  # página 1: só 2 secos — não bate o mínimo de 4
+                return ([CommentSchema(text="eu quero", cid=f"p1a-{url[-4:]}"),
+                         CommentSchema(text="quero!", cid=f"p1b-{url[-4:]}")], 20)
+            # página 2: os que faltavam
+            return ([CommentSchema(text="Eu quero", cid=f"p2a-{url[-4:]}"),
+                     CommentSchema(text="quero pfv", cid=f"p2b-{url[-4:]}")], None)
+
+    import app.pipeline as mod
+    original = mod.DryRunClient
+    mod.DryRunClient = DoisPaginasClient
+    try:
+        session.add(Keyword(termo="planilha", tipo="top", mercado="keyword_livre",
+                            sinal_esperado="vendedor", ativo=True))
+        session.commit()
+        r = run_sweep(session, CFG, live=False)
+    finally:
+        mod.DryRunClient = original
+    assert r["segunda_chance_lidas"] >= 1
+    assert r["segunda_chance_salvos"] >= 1  # 2+2=4 secos -> demanda confirmada
+    assert r["sobreviventes"] >= 1
 
 
 def test_run_sweep_grava_termo_origem(session):

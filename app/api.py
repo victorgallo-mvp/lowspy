@@ -267,7 +267,7 @@ def reverso_tiktok(
         if not aweme:
             raise HTTPException(status_code=404, detail="vídeo não encontrado")
         try:
-            comments = client.video_comments(url)
+            comments, _ = client.video_comments(url)
         except Exception:
             comments = []  # legenda ainda vale mesmo sem comentário
     finally:

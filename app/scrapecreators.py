@@ -59,18 +59,21 @@ class LiveClient:
         items = [hashtag_to_item(a) for a in data.get("aweme_list", [])]
         return items, data.get("cursor")  # (items, next_cursor)
 
-    def search_top(self, query: str, cfg: dict, cursor=None):
+    def search_top(self, query: str, cfg: dict, cursor=None, sort_by: str = None):
+        # sort_by opcional: o MESMO termo ordenado por relevance/most-liked/date-posted
+        # devolve listas DIFERENTES — multiplicador de oferta sem vocabulário novo.
         s = cfg["search"]
         params: dict = {
             "query": query,
             "publish_time": s["publish_time"],
-            "sort_by": s["sort_by"],
+            "sort_by": sort_by or s["sort_by"],
             "region": s["region"],
         }
         if cursor is not None:
             params["cursor"] = cursor
         data = self._get("/v1/tiktok/search/top", params)
-        self.on_call("search_top", data.get("credits_remaining"), {"query": query, "cursor": cursor})
+        self.on_call("search_top", data.get("credits_remaining"),
+                     {"query": query, "cursor": cursor, "sort_by": params["sort_by"]})
         items = []
         for it in data.get("items", []):
             si = SearchItem.model_validate(it)
@@ -79,11 +82,16 @@ class LiveClient:
             items.append(si)
         return items, data.get("cursor")  # (items, next_cursor)
 
-    def video_comments(self, url: str) -> list[CommentSchema]:
+    def video_comments(self, url: str, cursor=None) -> "tuple[list[CommentSchema], Any]":
         # trim=false: trim=true devolve só ~4 comentários-lixo e mata o gate.
-        data = self._get("/v1/tiktok/video/comments", {"url": url, "trim": "false"})
-        self.on_call("video_comments", data.get("credits_remaining"), {"url": url})
-        return [CommentSchema.model_validate(c) for c in data.get("comments", [])]
+        params: dict = {"url": url, "trim": "false"}
+        if cursor is not None:
+            params["cursor"] = cursor
+        data = self._get("/v1/tiktok/video/comments", params)
+        self.on_call("video_comments", data.get("credits_remaining"), {"url": url, "cursor": cursor})
+        comments = [CommentSchema.model_validate(c) for c in data.get("comments", [])]
+        next_cursor = data.get("cursor") if data.get("has_more") else None
+        return comments, next_cursor  # (comentários, cursor da próxima página ou None)
 
     def video_info(self, url: str) -> dict:
         """Engenharia reversa: dados de UM vídeo específico por link (legenda,
@@ -160,13 +168,14 @@ class DryRunClient:
         self._spend("search_hashtag", {"hashtag": hashtag, "cursor": cursor})
         return self._items(), None  # dry-run: página única
 
-    def search_top(self, query: str, cfg: dict, cursor=None):
-        self._spend("search_top", {"query": query, "cursor": cursor})
+    def search_top(self, query: str, cfg: dict, cursor=None, sort_by: str = None):
+        self._spend("search_top", {"query": query, "cursor": cursor, "sort_by": sort_by})
         return self._items(), None  # dry-run: página única
 
-    def video_comments(self, url: str) -> list[CommentSchema]:
-        self._spend("video_comments", {"url": url})
-        return [CommentSchema.model_validate(c) for c in self._comments.get("comments", [])]
+    def video_comments(self, url: str, cursor=None):
+        self._spend("video_comments", {"url": url, "cursor": cursor})
+        comments = [CommentSchema.model_validate(c) for c in self._comments.get("comments", [])]
+        return comments, None  # dry-run: página única de comentários
 
     def video_info(self, url: str) -> dict:
         self._spend("video_info", {"url": url})

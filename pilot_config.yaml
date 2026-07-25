@@ -274,8 +274,12 @@ discovery:
   keyword_search:
     enabled: true
     recency_days: 15       # foco em produto ativo agora, não garimpo de post antigo
-    max_pages: 10           # teto MÁXIMO por palavra — a paginação adaptativa (abaixo)
-                            # costuma parar bem antes disso quando o rendimento cai
+    # O MESMO termo ordenado de jeitos diferentes devolve listas DIFERENTES — busca
+    # cada termo em todas as ordenações abaixo (multiplicador de oferta sem precisar
+    # de vocabulário novo; run 34 esgotou os termos usando só 340/1000 do orçamento).
+    sort_modes: ["relevance", "most-liked", "date-posted"]
+    max_pages: 10           # teto MÁXIMO por palavra+ordenação — a paginação adaptativa
+                            # (abaixo) costuma parar bem antes disso quando o rendimento cai
     max_items: 50           # teto por keyword — o que vier primeiro entre páginas e itens
     min_novos_por_pagina: 1 # paginação por RENDIMENTO: se uma página render menos que
                             # isso de candidato novo, para essa palavra e troca pra
@@ -404,6 +408,10 @@ weights:
   # Era 2 — pouco demais: em vídeo de 500k views, 2 "quero" é ruído; no run 33, todos
   # os ruins tinham 2-4 e todos os bons 7-16.
   min_intent_comments_for_demand: 4
+  # Segunda chance pro quase-aprovado: se a 1ª página de comentários rendeu entre
+  # este piso e o mínimo acima (ex: 2-3 secos), lê MAIS UMA página (+1 crédito) antes
+  # de descartar — o post grande pode ter os "eu quero" além da primeira página.
+  segunda_chance_min_intencao: 2
 
 # --- Caps do run --live (escala "enxuto ~50 créditos") ----------------------
 caps:

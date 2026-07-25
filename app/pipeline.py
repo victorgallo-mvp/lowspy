@@ -207,6 +207,7 @@ def run_sweep(session, cfg: dict, live: bool,
     ks_max_items = ks_cfg.get("max_items", 9999)
     ks_min_comments = ks_cfg.get("abs_min_comments", 100)
     ks_min_novos_pagina = ks_cfg.get("min_novos_por_pagina", 1)  # paginação por rendimento
+    ks_sort_modes = ks_cfg.get("sort_modes", ["relevance"])  # mesmo termo, listas diferentes
     keyword_cfg = {**cfg, "thresholds": {**cfg["thresholds"], "abs_min_comments": ks_min_comments}}
     # Teto ÚNICO de créditos pro run inteiro (busca + leitura de comentário somadas) —
     # sem isso, com o pool de 100+ palavras, o run não teria fim natural num dia ruim.
@@ -238,6 +239,7 @@ def run_sweep(session, cfg: dict, live: bool,
     survivors = 0
     novos = 0
     termos_tentados = 0
+    segunda_chances = [0, 0]   # [páginas-2 lidas, quase-aprovados salvos por elas]
     ranked_ids: set = set()    # já passou pelo autor-dedup (evita duplicar/re-contar autor)
     all_candidates: list = []  # fila ordenada por views, cresce a cada palavra
     fetch_idx = 0               # até onde já tentamos ler comentário em all_candidates
@@ -251,61 +253,62 @@ def run_sweep(session, cfg: dict, live: bool,
     def _collect_termo(kw) -> None:
         nonlocal total_seen, lang_dropped, fisico_dropped, highticket_dropped
         nonlocal nao_digital_dropped, velho_dropped, vistos_pulados
-        cursor = None
         items_this_kw = 0
-        for _page in range(ks_max_pages):
-            if _gasto_total() >= orcamento_total:
-                return
-            try:
-                items, cursor = client.search_top(kw.termo, cfg, cursor)
-            except Exception as e:  # falha de coleta não derruba o pipeline
-                LOG.error("Busca falhou para %r: %s", kw.termo, e)
-                return
-            total_seen += len(items)
-            items_this_kw += len(items)
-            if require_pt:
-                kept = [it for it in items if lang_allowed(it.desc)]
-                lang_dropped += len(items) - len(kept)
-                items = kept
-            novos_na_pagina = 0
-            for it in select_level0_relative(items, keyword_cfg):
-                if not it.id or it.id in n0_by_id:
-                    continue  # mantém a 1ª ocorrência
-                if is_fisico(it.desc):  # backstop anti-físico (só digital)
-                    fisico_dropped += 1
-                    continue
-                if is_high_ticket(it.desc, cfg):  # queremos low-ticket
-                    highticket_dropped += 1
-                    continue
-                # termo de mercado digital curado dispensa confirmação — o próprio
-                # termo já prova o nicho. Termo genérico (Kit/preço/palavra comum tipo
-                # "colecao") sozinho não prova nada: se a legenda não confirma ser
-                # digital, NÃO descarta ainda — adia a decisão pra leitura de
-                # comentário (N1), onde os comentários (já pagos) podem confirmar
-                # ("quero o pdf", "tá no canva?"). Vendedor de legenda vazia se salva.
-                it.confirmar_digital = (
-                    kw.mercado != "keyword_livre" and not is_digital_confirmado(it.desc, cfg)
-                )
-                if ks_recency_days:  # recência: foco em produto ativo agora
-                    ct = it.ct_int()
-                    if ct and (now - float(ct)) > ks_recency_days * 86400:
-                        velho_dropped += 1
+        # o MESMO termo em cada ordenação (relevance/most-liked/date-posted) devolve
+        # listas diferentes — oferta extra sem vocabulário novo; dedup via n0_by_id
+        for sort_by in ks_sort_modes:
+            cursor = None
+            for _page in range(ks_max_pages):
+                if _gasto_total() >= orcamento_total or items_this_kw >= ks_max_items:
+                    return
+                try:
+                    items, cursor = client.search_top(kw.termo, cfg, cursor, sort_by=sort_by)
+                except Exception as e:  # falha de coleta não derruba o pipeline
+                    LOG.error("Busca falhou para %r (%s): %s", kw.termo, sort_by, e)
+                    break
+                total_seen += len(items)
+                items_this_kw += len(items)
+                if require_pt:
+                    kept = [it for it in items if lang_allowed(it.desc)]
+                    lang_dropped += len(items) - len(kept)
+                    items = kept
+                novos_na_pagina = 0
+                for it in select_level0_relative(items, keyword_cfg):
+                    if not it.id or it.id in n0_by_id:
+                        continue  # mantém a 1ª ocorrência (inclui achado em outra ordenação)
+                    if is_fisico(it.desc):  # backstop anti-físico (só digital)
+                        fisico_dropped += 1
                         continue
-                it.market = kw.mercado
-                it.sinal_esperado = kw.sinal_esperado
-                it.termo_origem = kw.termo
-                it.novo = it.id not in existing_ids  # NOVIDADE
-                if pular_vistos and not it.novo:  # novidade na fonte: pula já visto
-                    vistos_pulados += 1
-                    continue
-                n0_by_id[it.id] = it
-                novos_na_pagina += 1
-            if not cursor:
-                break  # sem próxima página
-            if items_this_kw >= ks_max_items:
-                break  # teto de itens por palavra (o que vier primeiro)
-            if novos_na_pagina < ks_min_novos_pagina:
-                break  # rendimento caiu — troca de palavra em vez de cavar mais fundo
+                    if is_high_ticket(it.desc, cfg):  # queremos low-ticket
+                        highticket_dropped += 1
+                        continue
+                    # termo de mercado digital curado dispensa confirmação — o próprio
+                    # termo já prova o nicho. Termo genérico (Kit/preço/palavra comum
+                    # tipo "colecao") sozinho não prova nada: se a legenda não confirma
+                    # ser digital, NÃO descarta ainda — adia a decisão pra leitura de
+                    # comentário (N1), onde os comentários (já pagos) podem confirmar
+                    # ("quero o pdf", "tá no canva?"). Vendedor de legenda vazia se salva.
+                    it.confirmar_digital = (
+                        kw.mercado != "keyword_livre" and not is_digital_confirmado(it.desc, cfg)
+                    )
+                    if ks_recency_days:  # recência: foco em produto ativo agora
+                        ct = it.ct_int()
+                        if ct and (now - float(ct)) > ks_recency_days * 86400:
+                            velho_dropped += 1
+                            continue
+                    it.market = kw.mercado
+                    it.sinal_esperado = kw.sinal_esperado
+                    it.termo_origem = kw.termo
+                    it.novo = it.id not in existing_ids  # NOVIDADE
+                    if pular_vistos and not it.novo:  # novidade na fonte: pula já visto
+                        vistos_pulados += 1
+                        continue
+                    n0_by_id[it.id] = it
+                    novos_na_pagina += 1
+                if not cursor:
+                    break  # sem próxima página nesta ordenação — tenta a próxima
+                if novos_na_pagina < ks_min_novos_pagina:
+                    break  # rendimento caiu — troca de ordenação/palavra em vez de cavar
 
     def _rank_new_candidates() -> None:
         """Autor-dedup + ranking por views dos itens NOVOS de n0_by_id (desde a
@@ -333,7 +336,7 @@ def run_sweep(session, cfg: dict, live: bool,
             fetch_idx += 1
             cap = caption_seller_score(it.desc, cfg)
             try:
-                comments = client.video_comments(it.url)
+                comments, next_cursor = client.video_comments(it.url)
             except Exception as e:
                 LOG.error("Comentários falharam p/ %s: %s", it.url, e)
                 continue
@@ -347,6 +350,31 @@ def run_sweep(session, cfg: dict, live: bool,
             intent = intent_score(texts, it.desc, cfg)
             combined = round(intent["score"] + cap["score"], 2)
             sinal = classify_signal(intent, cap, cfg)
+
+            # SEGUNDA CHANCE pro quase-aprovado: ficou entre o piso (2) e o mínimo (4)
+            # de comentários secos na 1ª página — os "eu quero" podem estar na página
+            # seguinte. Lê MAIS UMA página (+1 crédito) antes de descartar.
+            min_demand = cfg["weights"].get("min_intent_comments_for_demand", 2)
+            sc_min = cfg["weights"].get("segunda_chance_min_intencao")
+            if (sinal != "demanda_confirmada" and sc_min is not None
+                    and next_cursor is not None
+                    and sc_min <= intent["n_comentarios_intencao"] < min_demand
+                    and _gasto_total() < orcamento_total):
+                try:
+                    mais, _ = client.video_comments(it.url, cursor=next_cursor)
+                    comment_fetches += 1
+                    segunda_chances[0] += 1
+                except Exception as e:
+                    LOG.error("Segunda página de comentários falhou p/ %s: %s", it.url, e)
+                    mais = []
+                if mais:
+                    comments = comments + mais
+                    texts = [c.text for c in comments if c.text]
+                    intent = intent_score(texts, it.desc, cfg)
+                    combined = round(intent["score"] + cap["score"], 2)
+                    sinal = classify_signal(intent, cap, cfg)
+                    if sinal == "demanda_confirmada":
+                        segunda_chances[1] += 1
 
             # persiste comentários (dedup por cid) marcando os de intenção
             intent_set = set(intent["matched_comments"])
@@ -423,6 +451,8 @@ def run_sweep(session, cfg: dict, live: bool,
         "sobreviventes": survivors,
         "termos_tentados": termos_tentados,
         "termos_disponiveis": len(keywords),
+        "segunda_chance_lidas": segunda_chances[0],
+        "segunda_chance_salvos": segunda_chances[1],
         "orcamento_usado": _gasto_total(),
         "orcamento_total": orcamento_total,
         "breadth": breadth,
