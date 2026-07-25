@@ -32,7 +32,11 @@ _FISICO = re.compile(
     r"\b(frete|correios|sedex|shopee|encomenda|enviamos|envio em|entrega em \d|"
     r"pronta entrega|sacolinha|em estoque|pedido m[íi]nimo|rastreio|transportadora|"
     r"envío|envio gratis|correo|paqueter[íi]a|contra entrega|"
-    r"free shipping|shipping|ships in|tracking|in stock|out of stock)\b",
+    r"free shipping|shipping|ships in|tracking|in stock|out of stock|"
+    # molde FÍSICO (silicone/gesso/bolo) vs molde DIGITAL (arquivo pra imprimir/cortar) —
+    # "molde"/"moldes" sozinho é ambíguo; material físico de molde desambigua
+    r"silicone|resina|gesso|cimento|isopor|sabonete artesanal|"
+    r"molde de silicone|forma de silicone|molde para bolo|forma de bolo)\b",
     re.IGNORECASE,
 )
 

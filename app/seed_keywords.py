@@ -49,15 +49,26 @@ def seed(session=None) -> dict:
         # Keyword livre no TikTok (/search/top, tipo "top"): reaproveita as MESMAS
         # palavras já usadas — hashtags dos mercados ativos + termos do Meta Ads —
         # sem lista própria no yaml, pra não duplicar/divergir.
+        #
+        # Origem importa pro pipeline: termos de mercado digital curado (mesmo
+        # vocabulário que já era hashtag confiável) dispensam confirmação extra na
+        # legenda — o próprio termo já prova o nicho. Termos genéricos do Meta Ads
+        # (preço/formato solto, tipo "Kit"/"Apenas R$10") sozinhos não provam nada,
+        # então ainda exigem a legenda confirmar ser digital (mercado "_generico").
         ks = disc.get("keyword_search", {})
         if ks.get("enabled", False):
-            termos_livres: set[str] = set()
+            termos_curados: set[str] = set()
             for market in enabled:
-                termos_livres.update(disc.get("markets", {}).get(market, []))
+                termos_curados.update(disc.get("markets", {}).get(market, []))
+            termos_genericos: set[str] = set()
             for tags in meta.get("keywords", {}).values():
-                termos_livres.update(tags)
-            for termo in termos_livres:
+                termos_genericos.update(tags)
+            termos_genericos -= termos_curados
+
+            for termo in termos_curados:
                 desired[(termo, "top")] = ("keyword_livre", "vendedor", True)
+            for termo in termos_genericos:
+                desired[(termo, "top")] = ("keyword_livre_generico", "vendedor", True)
 
         for (termo, tipo), (market, sinal, ativo) in desired.items():
             kw = session.query(Keyword).filter_by(termo=termo, tipo=tipo).first()

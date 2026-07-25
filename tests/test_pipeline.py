@@ -39,8 +39,9 @@ def test_sweep_dry_run_persists_and_scores(session):
 
 def test_run_sweep_dropa_nao_digital(session):
     # fixture tem um post de carro usado (sem nenhum termo de confirmacao_digital) —
-    # a confirmação roda sempre agora (busca é só keyword-livre)
-    session.add(Keyword(termo="planilha", tipo="top", mercado="keyword_livre",
+    # termo genérico (reaproveitado do Meta Ads, tipo "Kit"/preço) não prova nada
+    # sozinho, então ainda exige a legenda confirmar ser digital
+    session.add(Keyword(termo="kit", tipo="top", mercado="keyword_livre_generico",
                         sinal_esperado="vendedor", ativo=True))
     session.commit()
     r = run_sweep(session, CFG, live=False)
@@ -48,6 +49,17 @@ def test_run_sweep_dropa_nao_digital(session):
     produtos = session.query(Produto).all()
     posts = [session.get(Post, p.post_id) for p in produtos]
     assert all("corsa" not in (p.descricao or "").lower() for p in posts)
+
+
+def test_run_sweep_confia_no_termo_de_mercado_digital_curado(session):
+    # termo de mercado digital curado (era hashtag confiável) dispensa confirmação
+    # na legenda — mesmo o post do "Corsa" (sem palavra de confirmacao_digital)
+    # passa, porque o termo de busca já prova o nicho, igual valia pra hashtag
+    session.add(Keyword(termo="planilha", tipo="top", mercado="keyword_livre",
+                        sinal_esperado="vendedor", ativo=True))
+    session.commit()
+    r = run_sweep(session, CFG, live=False)
+    assert r["nao_digital_dropados"] == 0
 
 
 def test_run_sweep_prioriza_termos_da_lista_prioridade(session):
@@ -116,10 +128,11 @@ def test_run_sweep_usa_search_top_para_keyword_livre(session):
     session.commit()
     r = run_sweep(session, CFG, live=False)
     assert r["requests"].get("search_top") == 1
-    assert r["requests"].get("search_hashtag") is None  # só a keyword_livre estava ativa
-    # fixture tem 4 itens (8/87/132/214 comentários); o piso de keyword_search é 100 ->
-    # só os 2 com >=100 comentários entram no funil
-    assert r["n0_posts"] == 2
+    assert r["requests"].get("search_hashtag") is None  # canal de hashtag foi aposentado
+    # fixture tem 5 itens (8/87/132/150/214 comentários); o piso de keyword_search é
+    # 100 -> os 3 com >=100 comentários entram no funil (mercado curado dispensa
+    # confirmação na legenda, então até o post do "Corsa" passa aqui)
+    assert r["n0_posts"] == 3
 
 
 def test_run_sweep_ignora_keyword_meta_query(session):

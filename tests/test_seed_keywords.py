@@ -10,15 +10,17 @@ def test_seed_deriva_keyword_livre_das_hashtags_e_do_meta(session):
     assert r["inserted"] > 0
 
     tops = session.query(Keyword).filter_by(tipo="top", ativo=True).all()
-    termos_top = {k.termo for k in tops}
+    by_termo = {k.termo: k for k in tops}
 
-    # reaproveita palavra de hashtag de mercado ativo (formato_digital) e termo exato do Meta
-    assert "apostila" in termos_top
-    assert "Apenas R$14,90" in termos_top
-    assert all(k.mercado == "keyword_livre" for k in tops)
+    # reaproveita palavra de hashtag de mercado ativo (formato_digital) -> curada,
+    # dispensa confirmação extra na legenda (o termo já prova o nicho, era hashtag)
+    assert by_termo["apostila"].mercado == "keyword_livre"
+    # termo exato do Meta Ads -> genérico ("Kit"/preço sozinho não prova nada),
+    # ainda exige confirmação digital na legenda
+    assert by_termo["Apenas R$14,90"].mercado == "keyword_livre_generico"
 
     # mercado desativado (fisico_revenda) não entra na keyword livre
-    assert "achadinhos" not in termos_top
+    assert "achadinhos" not in by_termo
 
 
 def test_seed_desativa_keyword_livre_quando_keyword_search_desliga(session):

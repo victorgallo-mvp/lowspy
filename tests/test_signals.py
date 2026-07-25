@@ -97,6 +97,14 @@ def test_is_fisico_dropa_envio():
     assert is_fisico("editáveis no Canva, link na bio") is False
 
 
+def test_is_fisico_dropa_molde_fisico_por_material():
+    # "molde"/"moldes" sozinho é ambíguo (físico de silicone/bolo vs digital pra
+    # imprimir/cortar) — material físico desambigua mesmo sem falar de frete/envio
+    assert is_fisico("molde de silicone pra resina, várias formas 😍") is True
+    assert is_fisico("forma de bolo em gesso, super detalhada") is True
+    assert is_fisico("moldes digitais pra cortar em EVA, arquivo em PDF") is False
+
+
 def test_is_high_ticket():
     assert is_high_ticket("Mentoria completa de tráfego pago", CFG) is True
     assert is_high_ticket("12x de R$97 na formação", CFG) is True

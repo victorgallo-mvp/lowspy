@@ -275,7 +275,11 @@ def run_sweep(session, cfg: dict, live: bool,
                 if is_high_ticket(it.desc, cfg):  # queremos low-ticket
                     highticket_dropped += 1
                     continue
-                if not is_digital_confirmado(it.desc, cfg):  # o termo sozinho não prova nada
+                # termo de mercado digital curado (era hashtag confiável) dispensa
+                # confirmação na legenda — o próprio termo já prova o nicho. Só termo
+                # genérico reaproveitado do Meta Ads ("Kit"/preço) sozinho não prova
+                # nada, então ainda exige a legenda confirmar ser digital.
+                if kw.mercado != "keyword_livre" and not is_digital_confirmado(it.desc, cfg):
                     nao_digital_dropped += 1
                     continue
                 if ks_recency_days:  # recência: foco em produto ativo agora
