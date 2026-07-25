@@ -368,7 +368,10 @@ def run_sweep(session, cfg: dict, live: bool,
                     LOG.error("Segunda página de comentários falhou p/ %s: %s", it.url, e)
                     mais = []
                 if mais:
-                    comments = comments + mais
+                    # páginas do TikTok se sobrepõem — dedup por cid, senão o mesmo
+                    # comentário conta 2x no score e vira INSERT duplicado no banco
+                    ja_vistos = {c.cid for c in comments if c.cid}
+                    comments = comments + [c for c in mais if not c.cid or c.cid not in ja_vistos]
                     texts = [c.text for c in comments if c.text]
                     intent = intent_score(texts, it.desc, cfg)
                     combined = round(intent["score"] + cap["score"], 2)
@@ -378,9 +381,11 @@ def run_sweep(session, cfg: dict, live: bool,
 
             # persiste comentários (dedup por cid) marcando os de intenção
             intent_set = set(intent["matched_comments"])
-            for c in comments:
-                if not c.cid:
+            persistidos: set = set()  # dedup DENTRO do lote — session.get não enxerga
+            for c in comments:        # objeto pendente ainda não gravado (pkey violada)
+                if not c.cid or c.cid in persistidos:
                     continue
+                persistidos.add(c.cid)
                 cm = session.get(Comment, {"cid": c.cid, "post_id": it.id})
                 if cm is None:
                     cm = Comment(cid=c.cid, post_id=it.id)

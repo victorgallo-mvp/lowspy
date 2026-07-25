@@ -221,8 +221,10 @@ def test_run_sweep_segunda_chance_le_mais_uma_pagina(session):
             if cursor is None:  # página 1: só 2 secos — não bate o mínimo de 4
                 return ([CommentSchema(text="eu quero", cid=f"p1a-{url[-4:]}"),
                          CommentSchema(text="quero!", cid=f"p1b-{url[-4:]}")], 20)
-            # página 2: os que faltavam
-            return ([CommentSchema(text="Eu quero", cid=f"p2a-{url[-4:]}"),
+            # página 2: os que faltavam + 1 REPETIDO da página 1 (cursores do TikTok
+            # se sobrepõem — não pode contar 2x no score nem duplicar INSERT no banco)
+            return ([CommentSchema(text="eu quero", cid=f"p1a-{url[-4:]}"),
+                     CommentSchema(text="Eu quero", cid=f"p2a-{url[-4:]}"),
                      CommentSchema(text="quero pfv", cid=f"p2b-{url[-4:]}")], None)
 
     import app.pipeline as mod
