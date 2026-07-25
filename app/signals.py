@@ -134,13 +134,21 @@ def caption_seller_score(caption: str, cfg: dict) -> dict[str, Any]:
 
 
 def intent_score(comment_texts: list[str], caption: str, cfg: dict) -> dict[str, Any]:
-    """Score ponderado de intenção nos comentários (peso, não match cru)."""
+    """Score ponderado de intenção nos comentários (peso, não match cru).
+
+    Intenção genérica ("quero"/"quanto custa") só conta em comentário SECO — curto,
+    onde o pedido É o comentário ("eu quero", "quero o link"). "quero" enterrado
+    numa frase longa sobre outra coisa ("quero ficar igual você", "quero ser amiga
+    deles") é fã/conversa, não demanda de produto — achado do run 33: todos os
+    falsos positivos tinham "quero" em frase longa; todos os bons, "quero" seco.
+    Sinais fortes (checkout tipo hotmart, comportamento de venda) valem sempre."""
     w = cfg["weights"]
-    groups = {
-        "intencao": cfg["intencao"],
+    seco_max = w.get("seco_max_chars", 45)
+    strong_groups = {
         "comportamento_venda": cfg["keywords"]["comportamento_venda"],
         "checkout": cfg["keywords"]["checkout"],
     }
+    intencao = cfg["intencao"]
     total = len(comment_texts)
     intent_comments = 0
     raw = 0.0
@@ -148,9 +156,11 @@ def intent_score(comment_texts: list[str], caption: str, cfg: dict) -> dict[str,
     for text in comment_texts:
         low = text.lower()
         hit = 0.0
-        for gname, words in groups.items():
+        for gname, words in strong_groups.items():
             if any(kw.lower() in low for kw in words):
                 hit += w[gname]
+        if len(text.strip()) <= seco_max and any(kw.lower() in low for kw in intencao):
+            hit += w["intencao"]
         if hit > 0:
             intent_comments += 1
             raw += hit

@@ -57,13 +57,16 @@ def seed(session=None) -> dict:
         # então ainda exigem a legenda confirmar ser digital (mercado "_generico").
         ks = disc.get("keyword_search", {})
         if ks.get("enabled", False):
+            # Ambíguos declarados no config (palavra comum: "colecao", "exercícios",
+            # "kit"...) não ganham passe livre mesmo vindo de mercado digital curado.
+            ambiguos = {t.lower() for t in disc.get("termos_genericos", [])}
             termos_curados: set[str] = set()
             for market in enabled:
                 termos_curados.update(disc.get("markets", {}).get(market, []))
-            termos_genericos: set[str] = set()
+            termos_genericos: set[str] = {t for t in termos_curados if t.lower() in ambiguos}
+            termos_curados -= termos_genericos
             for tags in meta.get("keywords", {}).values():
-                termos_genericos.update(tags)
-            termos_genericos -= termos_curados
+                termos_genericos.update(t for t in tags if t not in termos_curados)
 
             for termo in termos_curados:
                 desired[(termo, "top")] = ("keyword_livre", "vendedor", True)

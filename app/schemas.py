@@ -28,6 +28,8 @@ class SearchItem(BaseModel):
     sinal_esperado: str = ""
     termo_origem: str = ""  # transiente: palavra-chave exata que achou este item
     novo: bool = False  # transiente: 1ª vez visto (não estava no DB antes deste run)
+    confirmar_digital: bool = False  # transiente: termo genérico + legenda não confirma
+                                     # digital — decide na leitura de comentário (N1)
 
     @property
     def author_id(self) -> str:

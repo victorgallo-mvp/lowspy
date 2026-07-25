@@ -71,14 +71,36 @@ def test_caption_seller_score_detects_cta():
 
 
 def test_classify_signal():
-    # demanda confirmada: >=2 comentários de intenção
-    intent = {"n_comentarios_intencao": 3, "score": 4.0}
+    # demanda confirmada: >= min_intent_comments_for_demand (4) comentários de intenção
+    intent = {"n_comentarios_intencao": 4, "score": 5.0}
     assert classify_signal(intent, {"score": 0.0}, CFG) == "demanda_confirmada"
+    # 3 comentários não basta mais (era 2; run 33: ruins tinham 2-4, bons 7-16) —
+    # com sinal presente vira "vendedor", não demanda
+    intent = {"n_comentarios_intencao": 3, "score": 4.0}
+    assert classify_signal(intent, {"score": 0.0}, CFG) == "vendedor_off_platform"
     # vendedor: sem intenção no comentário mas CTA na legenda
     intent = {"n_comentarios_intencao": 0, "score": 0.0}
     assert classify_signal(intent, {"score": 1.5}, CFG) == "vendedor_off_platform"
     # sem sinal
     assert classify_signal(intent, {"score": 0.0}, CFG) == "sem_sinal"
+
+
+def test_intent_score_so_conta_quero_em_comentario_seco():
+    # "quero" seco (o pedido É o comentário) conta; "quero" enterrado em frase longa
+    # sobre outra coisa (fã de influencer, conversa) não conta — achado do run 33
+    secos = ["eu quero", "Quero pfv", "quero o link"]
+    longos = [
+        "nossa quero ficar igual vc diva meu corpo tá muito feio",
+        "Quero ser amiga deles, sou viciada em jogos de tabuleiro",
+        "beleza vou fzr agr as 23:36 e já quero resultado amanhã ta",
+    ]
+    r_secos = intent_score(secos, "legenda", CFG)
+    r_longos = intent_score(longos, "legenda", CFG)
+    assert r_secos["n_comentarios_intencao"] == 3
+    assert r_longos["n_comentarios_intencao"] == 0
+    # sinal forte (checkout/venda) vale mesmo em comentário longo
+    r_forte = intent_score(["gente comprei ontem pela hotmart e chegou na hora, super recomendo"], "l", CFG)
+    assert r_forte["n_comentarios_intencao"] == 1
 
 
 def test_select_level0_relative_preserves_niche():

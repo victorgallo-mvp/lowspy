@@ -170,6 +170,34 @@ discovery:
     - "templates"
     - "svg"
     - "png"
+  # Termos AMBÍGUOS: palavras comuns do dia a dia que, mesmo vindo de mercado digital
+  # curado, trazem qualquer coisa na busca livre ("colecao" acha coleção de jogo de
+  # tabuleiro, "exercícios" acha treino de academia, "projetos" acha oficina de carro
+  # — run 33). Esses NÃO ganham passe livre: precisam confirmar ser digital na legenda
+  # OU nos comentários (que já pagamos pra ler). Termos inequívocos (apostila,
+  # planilha, ebook, editaveiscanva...) continuam confiáveis por si só.
+  termos_genericos:
+    - "exercicios"
+    - "exercícios"
+    - "dinamicas"
+    - "dinâmicas"
+    - "atividades"
+    - "ilustrado"
+    - "ilustradas"
+    - "editavel"
+    - "editaveis"
+    - "imprimir"
+    - "impressos"
+    - "kit"
+    - "catalogo"
+    - "vetor"
+    - "pack"
+    - "colecao"
+    - "projetos"
+    - "png"
+    - "svg"
+    - "cliquenolink"
+    - "acessoimediato"
   markets:
     # Formato de Entrega (digital, pt) — acha o vendedor de PDF/apostila/molde direto
     formato_digital:
@@ -252,7 +280,10 @@ discovery:
     min_novos_por_pagina: 1 # paginação por RENDIMENTO: se uma página render menos que
                             # isso de candidato novo, para essa palavra e troca pra
                             # próxima da fila, em vez de continuar cavando fundo à toa
-    abs_min_comments: 100   # piso alto — busca livre é mais ruidosa que hashtag curada
+    abs_min_comments: 30    # era 100 — matava ~80% na entrada e a paginação desistia na
+                            # 1ª página (run 33: 1,3 pág/termo, só 203/1000 do orçamento
+                            # usados). Com os gates de qualidade no N1 (comentário seco,
+                            # mínimo 4), a entrada pode abrir; o freio é o orcamento_total
 
 # --- Parâmetros da busca /v1/tiktok/search/top (usado por keyword_search) ----
 search:
@@ -365,8 +396,14 @@ weights:
   checkout: 2.0
   cta_legenda: 1.5         # sinal de vendedor na legenda (funil digital)
   density_bonus_max: 2.0   # bônus proporcional à densidade de comentários de intenção
-  # Piso de intenção de comentário p/ marcar "demanda confirmada" (senão é "vendedor")
-  min_intent_comments_for_demand: 2
+  # Comentário SECO: intenção genérica ("quero") só conta se o comentário for curto
+  # — o pedido É o comentário ("eu quero", "quero o link"). "quero" em frase longa
+  # sobre outra coisa é fã/conversa (achado do run 33: separou 100% bons de ruins).
+  seco_max_chars: 45
+  # Piso de intenção de comentário p/ marcar "demanda confirmada" (senão é "vendedor").
+  # Era 2 — pouco demais: em vídeo de 500k views, 2 "quero" é ruído; no run 33, todos
+  # os ruins tinham 2-4 e todos os bons 7-16.
+  min_intent_comments_for_demand: 4
 
 # --- Caps do run --live (escala "enxuto ~50 créditos") ----------------------
 caps:

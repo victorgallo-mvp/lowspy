@@ -38,9 +38,9 @@ def test_sweep_dry_run_persists_and_scores(session):
 
 
 def test_run_sweep_dropa_nao_digital(session):
-    # fixture tem um post de carro usado (sem nenhum termo de confirmacao_digital) —
-    # termo genérico (reaproveitado do Meta Ads, tipo "Kit"/preço) não prova nada
-    # sozinho, então ainda exige a legenda confirmar ser digital
+    # fixture tem um post de carro usado (sem nenhum termo de confirmacao_digital na
+    # legenda NEM nos comentários) — termo genérico ("Kit"/preço/palavra comum) não
+    # prova nada sozinho: a decisão é adiada pro N1 e cai se nada confirmar digital
     session.add(Keyword(termo="kit", tipo="top", mercado="keyword_livre_generico",
                         sinal_esperado="vendedor", ativo=True))
     session.commit()
@@ -49,6 +49,37 @@ def test_run_sweep_dropa_nao_digital(session):
     produtos = session.query(Produto).all()
     posts = [session.get(Post, p.post_id) for p in produtos]
     assert all("corsa" not in (p.descricao or "").lower() for p in posts)
+
+
+def test_run_sweep_termo_generico_resgata_pelo_comentario(session):
+    # termo genérico + legenda sem confirmação NÃO morre no N0: a decisão é adiada
+    # pra leitura de comentário. Se um comentário confirmar digital ("tem o pdf?"),
+    # o post se salva — vendedor de legenda vazia é comum no nicho
+    import json, pathlib, tempfile, shutil
+    src = pathlib.Path("fixtures")
+    tmp = pathlib.Path(tempfile.mkdtemp())
+    try:
+        for f in src.glob("*.json"):
+            shutil.copy(f, tmp / f.name)
+        com = json.loads((tmp / "comments.json").read_text())
+        com["comments"][3]["text"] = "tem o pdf? quero"  # confirma digital no comentário
+        (tmp / "comments.json").write_text(json.dumps(com))
+
+        import app.pipeline as mod
+        from app.scrapecreators import DryRunClient
+        original = mod.DryRunClient
+        mod.DryRunClient = lambda cb: DryRunClient(cb, fixtures=tmp)
+        try:
+            session.add(Keyword(termo="kit", tipo="top", mercado="keyword_livre_generico",
+                                sinal_esperado="vendedor", ativo=True))
+            session.commit()
+            r = run_sweep(session, CFG, live=False)
+        finally:
+            mod.DryRunClient = original
+        # o post do Corsa (legenda sem confirmação) é resgatado pelo comentário
+        assert r["nao_digital_dropados"] == 0
+    finally:
+        shutil.rmtree(tmp)
 
 
 def test_run_sweep_confia_no_termo_de_mercado_digital_curado(session):
@@ -130,9 +161,9 @@ def test_run_sweep_usa_search_top_para_keyword_livre(session):
     assert r["requests"].get("search_top") == 1
     assert r["requests"].get("search_hashtag") is None  # canal de hashtag foi aposentado
     # fixture tem 5 itens (8/87/132/150/214 comentários); o piso de keyword_search é
-    # 100 -> os 3 com >=100 comentários entram no funil (mercado curado dispensa
+    # 30 -> os 4 com >=30 comentários entram no funil (mercado curado dispensa
     # confirmação na legenda, então até o post do "Corsa" passa aqui)
-    assert r["n0_posts"] == 3
+    assert r["n0_posts"] == 4
 
 
 def test_run_sweep_ignora_keyword_meta_query(session):

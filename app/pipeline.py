@@ -188,14 +188,16 @@ def run_sweep(session, cfg: dict, live: bool,
         select(Keyword).where(Keyword.ativo == True, Keyword.tipo == "top")  # noqa: E712
     ).scalars().all()
     # Prioridade: termos dessa lista sempre entram primeiro na fila — sem isso, os
-    # termos novos sempre ficariam pro final. Não muda o teto de gasto, só a ORDEM.
+    # termos novos sempre ficariam pro final. Depois deles, termos de mercado digital
+    # curado vêm antes dos genéricos (Kit/preço/palavra comum) — se o orçamento acabar
+    # no meio, morre primeiro a cauda mais ruidosa. Não muda o teto, só a ORDEM.
     priority_terms = cfg.get("discovery", {}).get("prioridade", [])
 
     def _priority_key(kw):
         try:
             return (0, priority_terms.index(kw.termo))
         except ValueError:
-            return (1, 0)
+            return (1 if kw.mercado == "keyword_livre" else 2, 0)
 
     keywords = sorted(active_kws, key=_priority_key)
 
@@ -275,13 +277,15 @@ def run_sweep(session, cfg: dict, live: bool,
                 if is_high_ticket(it.desc, cfg):  # queremos low-ticket
                     highticket_dropped += 1
                     continue
-                # termo de mercado digital curado (era hashtag confiável) dispensa
-                # confirmação na legenda — o próprio termo já prova o nicho. Só termo
-                # genérico reaproveitado do Meta Ads ("Kit"/preço) sozinho não prova
-                # nada, então ainda exige a legenda confirmar ser digital.
-                if kw.mercado != "keyword_livre" and not is_digital_confirmado(it.desc, cfg):
-                    nao_digital_dropped += 1
-                    continue
+                # termo de mercado digital curado dispensa confirmação — o próprio
+                # termo já prova o nicho. Termo genérico (Kit/preço/palavra comum tipo
+                # "colecao") sozinho não prova nada: se a legenda não confirma ser
+                # digital, NÃO descarta ainda — adia a decisão pra leitura de
+                # comentário (N1), onde os comentários (já pagos) podem confirmar
+                # ("quero o pdf", "tá no canva?"). Vendedor de legenda vazia se salva.
+                it.confirmar_digital = (
+                    kw.mercado != "keyword_livre" and not is_digital_confirmado(it.desc, cfg)
+                )
                 if ks_recency_days:  # recência: foco em produto ativo agora
                     ct = it.ct_int()
                     if ct and (now - float(ct)) > ks_recency_days * 86400:
@@ -319,7 +323,7 @@ def run_sweep(session, cfg: dict, live: bool,
             all_candidates.append(it)
 
     def _evaluate() -> None:
-        nonlocal comment_fetches, survivors, novos, fetch_idx
+        nonlocal comment_fetches, survivors, novos, fetch_idx, nao_digital_dropped
         # continua de onde parou (fetch_idx) — não relê quem já foi lido antes, e um
         # item ranqueado mas não lido por falta de orçamento fica na fila pra próxima palavra
         while fetch_idx < len(all_candidates):
@@ -335,6 +339,11 @@ def run_sweep(session, cfg: dict, live: bool,
                 continue
             comment_fetches += 1
             texts = [c.text for c in comments if c.text]
+            # decisão adiada do N0: termo genérico sem confirmação na legenda — os
+            # comentários (já pagos) são a última chance de provar que é digital
+            if it.confirmar_digital and not any(is_digital_confirmado(t, cfg) for t in texts):
+                nao_digital_dropped += 1
+                continue
             intent = intent_score(texts, it.desc, cfg)
             combined = round(intent["score"] + cap["score"], 2)
             sinal = classify_signal(intent, cap, cfg)
