@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class SearchStats(BaseModel):
@@ -109,6 +109,15 @@ class AdSnapshotBody(BaseModel):
     model_config = ConfigDict(extra="ignore")
     text: str = ""
 
+    @field_validator("text", mode="before")
+    @classmethod
+    def _none_para_vazio(cls, v):
+        # Meta Ad Library manda "text": null em anúncio sem corpo de texto (comum em
+        # vídeo/reels sem legenda) — default só cobre campo AUSENTE, não presente com
+        # null; sem isso, pydantic rejeita e derruba a busca inteira daquele termo
+        # (achado real: 5 "instabilidades" da Meta eram esse bug o tempo todo).
+        return v if v is not None else ""
+
 
 class AdSnapshot(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -118,6 +127,11 @@ class AdSnapshot(BaseModel):
     videos: list = Field(default_factory=list)
     images: list = Field(default_factory=list)
     cards: list = Field(default_factory=list)  # anúncio carrossel: mídia fica aqui, não em images/videos
+
+    @field_validator("title", mode="before")
+    @classmethod
+    def _none_para_vazio(cls, v):
+        return v if v is not None else ""
 
 
 class AdItem(BaseModel):

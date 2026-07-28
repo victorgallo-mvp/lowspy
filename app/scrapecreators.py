@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 from typing import Any, Callable, Optional
 
@@ -22,9 +23,24 @@ from .schemas import (
 )
 
 BASE_URL = "https://api.scrapecreators.com"
+LOG = logging.getLogger("scrapecreators")
 
 # callback(endpoint, credits_remaining, params)
 CostCB = Callable[[str, Optional[int], dict], None]
+
+
+def _parse_ads(raw: list[dict]) -> list:
+    """Normaliza searchResults tolerando item malformado — 1 item com campo
+    inesperado (ex: title null) não pode derrubar a página inteira e fazer a busca
+    daquele termo parecer vazia (achado real: era exatamente isso, não instabilidade
+    da API — ver AdSnapshot._none_para_vazio em schemas.py pro caso já conhecido)."""
+    items = []
+    for a in raw:
+        try:
+            items.append(facebook_ad_to_item(a))
+        except Exception as e:
+            LOG.warning("item de anúncio Meta malformado, pulando: %s", e)
+    return items
 
 
 class RetryableHTTP(Exception):
@@ -113,7 +129,7 @@ class LiveClient:
         data = self._get("/v1/facebook/adLibrary/search/ads", params)
         self.on_call("search_facebook_ads", data.get("credits_remaining"),
                      {"query": query, "cursor": cursor})
-        items = [facebook_ad_to_item(a) for a in data.get("searchResults", [])]
+        items = _parse_ads(data.get("searchResults", []))
         return items, data.get("cursor")  # (items, next_cursor)
 
     def company_ads_count(self, page_id: str, cfg: dict) -> tuple[int, bool]:
@@ -183,7 +199,7 @@ class DryRunClient:
 
     def search_facebook_ads(self, query: str, cfg: dict, cursor=None):
         self._spend("search_facebook_ads", {"query": query, "cursor": cursor})
-        items = [facebook_ad_to_item(a) for a in self._meta_ads.get("searchResults", [])]
+        items = _parse_ads(self._meta_ads.get("searchResults", []))
         return items, None  # dry-run: página única
 
     def company_ads_count(self, page_id: str, cfg: dict) -> tuple[int, bool]:

@@ -53,3 +53,14 @@ def test_desc_inclui_titulo_do_anuncio_alem_do_corpo():
     })
     assert "Apostila Digital Completa" in it.desc
     assert "Garanta já o seu" in it.desc
+
+
+def test_title_e_text_nulos_nao_derrubam_o_item():
+    # regressão: a Meta Ad Library manda "title"/"text": null em anúncio de vídeo
+    # sem título — isso derrubava a validação do item inteiro (achado real: 5 runs
+    # "vazios" achados como instabilidade da API eram esse bug, não a Meta caindo)
+    it = facebook_ad_to_item({
+        "ad_archive_id": "7",
+        "snapshot": {"title": None, "body": {"text": None}},
+    })
+    assert it.desc == ""

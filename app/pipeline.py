@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import time
 from collections import Counter
 from datetime import datetime, timezone
 from typing import Any, Optional
@@ -214,8 +215,6 @@ def run_sweep(session, cfg: dict, live: bool,
     orcamento_total = cfg.get("discovery", {}).get("orcamento_total", 1000)
     if max_comment_fetches:  # override legado (CLI) — ainda serve pra ajustar o teto
         orcamento_total = max_comment_fetches
-
-    import time
 
     total_seen = 0
     lang_dropped = 0
