@@ -33,6 +33,16 @@ def _now():
 def _worker(run_id: int, live: bool, fonte: str, max_hashtags: Optional[int],
             max_comment_fetches: Optional[int]) -> None:
     session = SessionLocal()
+
+    def _on_progress(snapshot: dict) -> None:
+        # progress é escrito à parte de summary (que só existe no final) — permite
+        # o dashboard acompanhar o run em andamento (itens buscados/descartados,
+        # créditos gastos, termo atual) sem esperar terminar
+        run = session.get(Run, run_id)
+        if run and run.status == "running":
+            run.progress = snapshot
+            session.commit()
+
     try:
         run = session.get(Run, run_id)
         run.status = "running"
@@ -41,9 +51,10 @@ def _worker(run_id: int, live: bool, fonte: str, max_hashtags: Optional[int],
 
         cfg = config.load_config()
         if fonte == "meta":
-            summary = run_sweep_meta(session, cfg, live, run_id=run_id)
+            summary = run_sweep_meta(session, cfg, live, run_id=run_id, on_progress=_on_progress)
         else:
-            summary = run_sweep(session, cfg, live, max_hashtags, max_comment_fetches, run_id=run_id)
+            summary = run_sweep(session, cfg, live, max_hashtags, max_comment_fetches,
+                                run_id=run_id, on_progress=_on_progress)
 
         run = session.get(Run, run_id)
         run.status = "done"

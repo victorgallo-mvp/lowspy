@@ -140,7 +140,8 @@ class Run(Base):
     fonte = Column(String(10), default="tiktok")     # tiktok|meta
     started_at = Column(DateTime, nullable=True)
     finished_at = Column(DateTime, nullable=True)
-    summary = Column(JSON, nullable=True)
+    summary = Column(JSON, nullable=True)  # só o resultado FINAL (status done)
+    progress = Column(JSON, nullable=True)  # snapshot parcial, atualizado durante o run
     error = Column(Text, nullable=True)
     created_at = Column(DateTime, server_default=func.now())
 

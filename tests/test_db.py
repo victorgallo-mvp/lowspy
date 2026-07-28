@@ -21,7 +21,7 @@ def _fake_inspector(missing_col="idioma"):
                   "idioma", "termo_origem", "anunciante_total_ads", "anunciante_tem_mais_ads"],
         "produtos": ["id", "run_id", "novo"],
         "scores": ["id", "engaj_score", "dias_ativos"],
-        "runs": ["id", "fonte"],
+        "runs": ["id", "fonte", "progress"],
     }
 
     def get_columns(table):

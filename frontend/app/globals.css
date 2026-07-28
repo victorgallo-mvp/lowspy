@@ -122,6 +122,33 @@ body::after {
   padding-left: 12px; border-left: 2px solid rgba(255, 255, 255, 0.14);
 }
 
+/* ---------------- progresso da varredura em andamento ---------------- */
+.progresspanel {
+  background: var(--black); color: #eef1ec; border-radius: 0 0 var(--r) var(--r);
+  padding: 14px 22px 18px; margin: -24px 0 24px; box-shadow: var(--shadow);
+  font-family: var(--font-mono), monospace;
+}
+.progresspanel .ptop {
+  display: flex; align-items: baseline; justify-content: space-between;
+  font-size: 11px; color: #9ea692; margin-bottom: 10px; gap: 10px; flex-wrap: wrap;
+}
+.progresspanel .ptop b { color: var(--green); font-weight: 600; }
+.progressbar {
+  height: 4px; background: rgba(255, 255, 255, 0.12); border-radius: 2px;
+  overflow: hidden; margin-bottom: 12px;
+}
+.progressbar i {
+  display: block; height: 100%; background: var(--green);
+  transition: width 0.4s ease;
+}
+.pgrid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 10px 16px;
+}
+.pgrid div { font-size: 10px; color: #9ea692; text-transform: uppercase; letter-spacing: 0.06em; }
+.pgrid b { display: block; font-size: 16px; color: #eef1ec; font-weight: 600; margin-top: 2px; }
+.pgrid b.warn { color: #f0b429; }
+
 /* ---------------- fonte (tiktok / meta) ---------------- */
 .fontebar { display: flex; gap: 8px; padding: 22px 0 14px; }
 .reversofonte { padding: 0 0 14px; }

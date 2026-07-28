@@ -11,7 +11,7 @@ import logging
 import time
 from collections import Counter
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 from sqlalchemy import select
 
@@ -163,7 +163,8 @@ def upsert_produto(session, post, combined: float, sinal: str, preco,
 def run_sweep(session, cfg: dict, live: bool,
               max_hashtags: Optional[int] = None,
               max_comment_fetches: Optional[int] = None,
-              run_id: Optional[int] = None) -> dict[str, Any]:
+              run_id: Optional[int] = None,
+              on_progress: Optional[Callable[[dict], None]] = None) -> dict[str, Any]:
     """Busca é só keyword-livre agora (/search/top) — hashtag deixou de ser canal de
     busca próprio (era /search/hashtag). As mesmas palavras (mercados do discovery)
     já entram como keyword-livre via seed_keywords.py, então nada se perde.
@@ -420,6 +421,34 @@ def run_sweep(session, cfg: dict, live: bool,
                      it.market, sinal, " NOVO" if it.novo else "",
                      it.statistics.play_count, score_val, it.desc[:40])
 
+    def _snapshot() -> dict[str, Any]:
+        breadth: dict[str, int] = {}
+        for pr in session.execute(select(Produto)).scalars().all():
+            breadth[pr.mercado] = breadth.get(pr.mercado, 0) + 1
+        return {
+            "modo": "live" if live else "dry-run",
+            "total_buscado": total_seen,
+            "idioma_dropados": lang_dropped,
+            "fisico_dropados": fisico_dropped,
+            "highticket_dropados": highticket_dropped,
+            "nao_digital_dropados": nao_digital_dropped,
+            "velhos_dropados": velho_dropped,
+            "vistos_pulados": vistos_pulados,
+            "n0_posts": len(all_candidates),
+            "comment_fetches": comment_fetches,
+            "novos": novos,
+            "sobreviventes": survivors,
+            "termos_tentados": termos_tentados,
+            "termos_disponiveis": len(keywords),
+            "segunda_chance_lidas": segunda_chances[0],
+            "segunda_chance_salvos": segunda_chances[1],
+            "orcamento_usado": _gasto_total(),
+            "orcamento_total": orcamento_total,
+            "breadth": breadth,
+            "creditos_gastos": cost.total_credits(),
+            "requests": dict(cost.counts),
+        }
+
     try:
         for kw in keywords:
             if survivors >= target or _gasto_total() >= orcamento_total:
@@ -433,36 +462,15 @@ def run_sweep(session, cfg: dict, live: bool,
             _rank_new_candidates()
             _evaluate()
             session.commit()
+            if on_progress:
+                try:
+                    on_progress({**_snapshot(), "termo_atual": kw.termo})
+                except Exception:
+                    LOG.exception("on_progress falhou — não interrompe a varredura")
     finally:
         client.close()
 
-    breadth: dict[str, int] = {}
-    for pr in session.execute(select(Produto)).scalars().all():
-        breadth[pr.mercado] = breadth.get(pr.mercado, 0) + 1
-
-    return {
-        "modo": "live" if live else "dry-run",
-        "total_buscado": total_seen,
-        "idioma_dropados": lang_dropped,
-        "fisico_dropados": fisico_dropped,
-        "highticket_dropados": highticket_dropped,
-        "nao_digital_dropados": nao_digital_dropped,
-        "velhos_dropados": velho_dropped,
-        "vistos_pulados": vistos_pulados,
-        "n0_posts": len(all_candidates),
-        "comment_fetches": comment_fetches,
-        "novos": novos,
-        "sobreviventes": survivors,
-        "termos_tentados": termos_tentados,
-        "termos_disponiveis": len(keywords),
-        "segunda_chance_lidas": segunda_chances[0],
-        "segunda_chance_salvos": segunda_chances[1],
-        "orcamento_usado": _gasto_total(),
-        "orcamento_total": orcamento_total,
-        "breadth": breadth,
-        "creditos_gastos": cost.total_credits(),
-        "requests": dict(cost.counts),
-    }
+    return _snapshot()
 
 
 # --------------------------------------------------------------------------- #
@@ -470,7 +478,8 @@ def run_sweep(session, cfg: dict, live: bool,
 # Sinal de demanda: TEMPO DE VEICULAÇÃO (doc do operador — anúncio que sobrevive
 # ao teste do mercado), não intenção em comentário.
 # --------------------------------------------------------------------------- #
-def run_sweep_meta(session, cfg: dict, live: bool, run_id: Optional[int] = None) -> dict[str, Any]:
+def run_sweep_meta(session, cfg: dict, live: bool, run_id: Optional[int] = None,
+                   on_progress: Optional[Callable[[dict], None]] = None) -> dict[str, Any]:
     m = cfg.get("meta_ads", {})
     if not m.get("enabled", False):
         return {"modo": "meta-disabled", "fonte": "meta", "sobreviventes": 0}
@@ -506,6 +515,39 @@ def run_sweep_meta(session, cfg: dict, live: bool, run_id: Optional[int] = None)
     vistos_pulados = 0
     n0_by_id: dict[str, Any] = {}
     existing_ids = {r[0] for r in session.execute(select(Post.id)).all()}
+    survivors = 0
+    novos = 0
+    candidates: list = []
+
+    def _snapshot(termo_atual: str = "") -> dict[str, Any]:
+        breadth: dict[str, int] = {}
+        for pr in session.execute(select(Produto)).scalars().all():
+            breadth[pr.mercado] = breadth.get(pr.mercado, 0) + 1
+        curto_dias_stats: dict[str, int] = {}
+        if curto_dias:
+            s = sorted(curto_dias)
+            curto_dias_stats = {"min": s[0], "mediana": s[len(s) // 2], "max": s[-1]}
+        return {
+            "modo": "live" if live else "dry-run",
+            "fonte": "meta",
+            "total_buscado": total_seen,
+            "sem_texto_dropados": sem_texto_dropped,
+            "fisico_dropados": fisico_dropped,
+            "servico_local_dropados": servico_local_dropped,
+            "highticket_dropados": highticket_dropped,
+            "nao_digital_dropados": nao_digital_dropped,
+            "curto_dropados": curto_dropped,
+            "longo_dropados": longo_dropped,
+            "curto_dias_stats": curto_dias_stats,
+            "vistos_pulados": vistos_pulados,
+            "n0_posts": len(candidates) or len(n0_by_id),
+            "novos": novos,
+            "sobreviventes": survivors,
+            "breadth": breadth,
+            "creditos_gastos": cost.total_credits(),
+            "requests": dict(cost.counts),
+            "termo_atual": termo_atual,
+        }
 
     try:
         for kw in keywords:
@@ -553,6 +595,11 @@ def run_sweep_meta(session, cfg: dict, live: bool, run_id: Optional[int] = None)
                     n0_by_id[it.id] = it
                 if not cursor:
                     break
+            if on_progress:
+                try:
+                    on_progress(_snapshot(kw.termo))
+                except Exception:
+                    LOG.exception("on_progress falhou — não interrompe a varredura")
 
         # Upsert dos anúncios únicos (1 por ad_archive_id) — idempotente
         for it in n0_by_id.values():
@@ -610,44 +657,18 @@ def run_sweep_meta(session, cfg: dict, live: bool, run_id: Optional[int] = None)
             LOG.info("  META [%s] %s%s dias_ativos=%s score=%.1f | %s",
                      it.market, sinal, " NOVO" if it.novo else "",
                      it.dias_ativos, score_val, it.desc[:40])
+            if on_progress:
+                try:
+                    on_progress(_snapshot("avaliando anúncios"))
+                except Exception:
+                    LOG.exception("on_progress falhou — não interrompe a varredura")
         session.commit()
     finally:
         client.close()
 
-    breadth: dict[str, int] = {}
-    for pr in session.execute(select(Produto)).scalars().all():
-        breadth[pr.mercado] = breadth.get(pr.mercado, 0) + 1
-
-    curto_dias_stats: dict[str, int] = {}
-    if curto_dias:
-        curto_dias.sort()
-        n = len(curto_dias)
-        curto_dias_stats = {
-            "min": curto_dias[0],
-            "mediana": curto_dias[n // 2],
-            "max": curto_dias[-1],
-        }
-
-    return {
-        "modo": "live" if live else "dry-run",
-        "fonte": "meta",
-        "total_buscado": total_seen,
-        "sem_texto_dropados": sem_texto_dropped,
-        "fisico_dropados": fisico_dropped,
-        "servico_local_dropados": servico_local_dropped,
-        "highticket_dropados": highticket_dropped,
-        "nao_digital_dropados": nao_digital_dropped,
-        "curto_dropados": curto_dropped,
-        "longo_dropados": longo_dropped,  # banda travada: dias_ativos > dias_ativos_max
-        "curto_dias_stats": curto_dias_stats,  # diagnóstico: threshold errado ou pool é assim mesmo?
-        "vistos_pulados": vistos_pulados,
-        "n0_posts": len(candidates),
-        "novos": novos,
-        "sobreviventes": survivors,
-        "breadth": breadth,
-        "creditos_gastos": cost.total_credits(),
-        "requests": dict(cost.counts),
-    }
+    resultado = _snapshot()
+    del resultado["termo_atual"]  # só faz sentido em snapshot parcial, não no final
+    return resultado
 
 
 def ranked_products(session, limit: int = 20) -> list[dict]:

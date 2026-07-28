@@ -518,6 +518,7 @@ def _run_dict(run: Run) -> dict:
         "mode": run.mode,
         "fonte": run.fonte,
         "summary": run.summary,
+        "progress": run.progress if run.status == "running" else None,
         "error": run.error,
         "started_at": run.started_at.isoformat() if run.started_at else None,
         "finished_at": run.finished_at.isoformat() if run.finished_at else None,

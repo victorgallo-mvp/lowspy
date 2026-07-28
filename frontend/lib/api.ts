@@ -106,17 +106,38 @@ export async function getCusto(): Promise<CustoResp> {
   return r.json();
 }
 
+export type RunSnapshot = {
+  sobreviventes?: number;
+  total_buscado?: number;
+  n0_posts?: number;
+  novos?: number;
+  comment_fetches?: number;
+  idioma_dropados?: number;
+  fisico_dropados?: number;
+  highticket_dropados?: number;
+  nao_digital_dropados?: number;
+  velhos_dropados?: number;
+  vistos_pulados?: number;
+  sem_texto_dropados?: number;
+  servico_local_dropados?: number;
+  curto_dropados?: number;
+  longo_dropados?: number;
+  termos_tentados?: number;
+  termos_disponiveis?: number;
+  termo_atual?: string;
+  orcamento_usado?: number;
+  orcamento_total?: number;
+  creditos_gastos?: number | null;
+  breadth?: Record<string, number>;
+};
+
 export type Run = {
   id: number;
   status: "queued" | "running" | "done" | "error" | "interrupted";
   mode: string;
   fonte: "tiktok" | "meta";
-  summary: {
-    sobreviventes?: number;
-    total_buscado?: number;
-    creditos_gastos?: number | null;
-    breadth?: Record<string, number>;
-  } | null;
+  summary: RunSnapshot | null;
+  progress: RunSnapshot | null;
   error: string | null;
   started_at: string | null;
   finished_at: string | null;

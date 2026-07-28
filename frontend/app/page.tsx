@@ -7,6 +7,7 @@ import {
   Produto,
   ProdutosResp,
   Reverso,
+  RunSnapshot,
   TermoSugerido,
   TriggerError,
   Varredura,
@@ -34,6 +35,11 @@ const fmtDate = (iso: string | null) =>
         day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit",
       })
     : "—";
+const elapsed = (iso: string) => {
+  const s = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 1000));
+  const m = Math.floor(s / 60);
+  return m > 0 ? `${m}min ${s % 60}s` : `${s}s`;
+};
 
 /* ícones estilo TikTok (SVG inline) */
 const IconHeart = () => (
@@ -179,6 +185,8 @@ export default function Dashboard() {
   const [dry, setDry] = useState(false);
   const [sweeping, setSweeping] = useState(false);
   const [sweepMsg, setSweepMsg] = useState<string | null>(null);
+  const [sweepProgress, setSweepProgress] = useState<RunSnapshot | null>(null);
+  const [sweepStartedAt, setSweepStartedAt] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -209,10 +217,13 @@ export default function Dashboard() {
       for (let i = 0; i < 900; i++) {
         try {
           const run = await getRun(id);
+          if (run.started_at) setSweepStartedAt(run.started_at);
           if (run.status === "running" || run.status === "queued") {
             setSweepMsg(`varredura em andamento… (${run.mode})`);
+            setSweepProgress(run.progress);
           } else {
             setSweeping(false);
+            setSweepProgress(null);
             if (run.status === "done") {
               const s = run.summary;
               setSweepMsg(`✓ ${s?.sobreviventes ?? 0} produtos · ${s?.creditos_gastos ?? "?"} créditos`);
@@ -353,6 +364,41 @@ export default function Dashboard() {
         </label>
         {sweepMsg && <span className="runmsg">{sweepMsg}</span>}
       </section>
+
+      {sweeping && sweepProgress && (() => {
+        const p = sweepProgress;
+        const descartado =
+          (p.idioma_dropados ?? 0) + (p.fisico_dropados ?? 0) + (p.highticket_dropados ?? 0) +
+          (p.nao_digital_dropados ?? 0) + (p.velhos_dropados ?? 0) + (p.vistos_pulados ?? 0) +
+          (p.sem_texto_dropados ?? 0) + (p.servico_local_dropados ?? 0) +
+          (p.curto_dropados ?? 0) + (p.longo_dropados ?? 0);
+        const pct = p.orcamento_total
+          ? Math.min(100, (100 * (p.orcamento_usado ?? 0)) / p.orcamento_total)
+          : p.termos_disponiveis
+            ? Math.min(100, (100 * (p.termos_tentados ?? 0)) / p.termos_disponiveis)
+            : 0;
+        return (
+          <section className="progresspanel">
+            <div className="ptop">
+              <span>
+                {sweepStartedAt ? `rodando há ${elapsed(sweepStartedAt)}` : "rodando…"}
+                {p.termo_atual ? <> · termo atual: <b>{p.termo_atual}</b></> : null}
+              </span>
+              {p.termos_disponiveis ? (
+                <span>{p.termos_tentados ?? 0}/{p.termos_disponiveis} termos</span>
+              ) : null}
+            </div>
+            <div className="progressbar"><i style={{ width: `${pct}%` }} /></div>
+            <div className="pgrid">
+              <div>buscados<b>{compact(p.total_buscado ?? 0)}</b></div>
+              <div>descartados<b className="warn">{compact(descartado)}</b></div>
+              <div>avaliados (N1)<b>{compact(p.n0_posts ?? 0)}</b></div>
+              <div>aprovados<b>{compact(p.sobreviventes ?? 0)}</b></div>
+              <div>créditos<b>{compact(p.creditos_gastos ?? 0)}{p.orcamento_total ? ` / ${compact(p.orcamento_total)}` : ""}</b></div>
+            </div>
+          </section>
+        );
+      })()}
 
       {/* seletor de varredura */}
       <section className="runbar">
