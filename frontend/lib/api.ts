@@ -1,12 +1,8 @@
-function resolveBase(): string {
-  // tolera espaço/quebra-de-linha, barra final e falta de esquema (erros comuns de env var)
-  let raw = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000").trim();
-  raw = raw.replace(/\/+$/, "");
-  if (raw && !/^https?:\/\//i.test(raw)) raw = "https://" + raw;
-  return raw;
-}
-
-export const API_BASE = resolveBase();
+// Sempre relativo (/api) — o Next.js repassa pro backend real via rewrite
+// (next.config.js, API_PROXY_TARGET) rodando servidor-a-servidor. O navegador só
+// fala com o próprio domínio (mesma origem), então o cookie de sessão nunca é
+// cross-site — funciona em qualquer navegador, inclusive Safari com ITP.
+export const API_BASE = "/api";
 
 // todo fetch pro backend precisa mandar o cookie de sessão (auth via cookie httpOnly)
 const WITH_SESSION: RequestInit = { credentials: "include" };

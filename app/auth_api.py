@@ -28,17 +28,17 @@ _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
 def _set_session_cookies(response: Response, usuario_id: int) -> None:
-    # frontend (Vercel) e backend (Railway) são domínios diferentes — SameSite=None
-    # é obrigatório pra sobreviver ao fetch() entre sites (Lax só vale pra navegação
-    # de topo, não pra chamada de API via JS). Exige Secure=true (cookie só viaja em
-    # HTTPS), o que já é o padrão em produção.
+    # o frontend fala com o backend via proxy same-origin (next.config.js rewrite
+    # /api/* -> Railway) — o navegador só vê o domínio do próprio Vercel, nunca
+    # cross-site, então SameSite=Lax basta (e evita o bloqueio de cookie de
+    # terceiro do Safari/ITP, que barrava mesmo com SameSite=None antes do proxy).
     response.set_cookie(
         key=COOKIE_NAME,
         value=criar_token(usuario_id),
         max_age=config.JWT_EXPIRE_MINUTES * 60,
         httponly=True,
         secure=config.COOKIE_SECURE,
-        samesite="none" if config.COOKIE_SECURE else "lax",
+        samesite="lax",
     )
     # cookie CSRF: de propósito NÃO httpOnly — o frontend lê e ecoa no header
     # X-CSRF-Token em toda chamada que muda estado (ver middleware em api.py)
@@ -48,7 +48,7 @@ def _set_session_cookies(response: Response, usuario_id: int) -> None:
         max_age=config.JWT_EXPIRE_MINUTES * 60,
         httponly=False,
         secure=config.COOKIE_SECURE,
-        samesite="none" if config.COOKIE_SECURE else "lax",
+        samesite="lax",
     )
 
 
