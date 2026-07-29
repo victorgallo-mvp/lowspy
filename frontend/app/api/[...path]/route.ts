@@ -14,10 +14,15 @@ async function proxy(req: NextRequest, path: string[]): Promise<NextResponse> {
 
     const headers = new Headers();
     req.headers.forEach((value, key) => {
-      if (!["host", "connection", "content-length"].includes(key.toLowerCase())) {
+      if (!["host", "connection", "content-length", "accept-encoding"].includes(key.toLowerCase())) {
         headers.set(key, value);
       }
     });
+    // sem accept-encoding: o backend responde sem comprimir — evita todo o problema
+    // abaixo na raiz (undici já descomprime sozinho, então repassar um Content-
+    // Encoding que não bate mais com os bytes reais quebrava a decodificação
+    // no navegador: "não foi possível decodificar os dados brutos")
+    headers.set("accept-encoding", "identity");
 
     const hasBody = !["GET", "HEAD"].includes(req.method);
     const body = hasBody ? await req.arrayBuffer() : undefined;
@@ -30,8 +35,9 @@ async function proxy(req: NextRequest, path: string[]): Promise<NextResponse> {
     });
 
     const resHeaders = new Headers();
+    const STRIP = new Set(["set-cookie", "content-encoding", "content-length", "transfer-encoding"]);
     upstream.headers.forEach((value, key) => {
-      if (key.toLowerCase() !== "set-cookie") resHeaders.set(key, value);
+      if (!STRIP.has(key.toLowerCase())) resHeaders.set(key, value);
     });
     // vários Set-Cookie (sessão + csrf) — Headers.set() sobrescreveria um com o
     // outro, precisa anexar cada um individualmente. getSetCookie() nem sempre
@@ -46,13 +52,12 @@ async function proxy(req: NextRequest, path: string[]): Promise<NextResponse> {
     const buf = await upstream.arrayBuffer();
     return new NextResponse(buf, { status: upstream.status, headers: resHeaders });
   } catch (e) {
-    // temporário: expõe o motivo real do 500 pra diagnosticar — tirar depois de
-    // confirmado o proxy funcionando (não deixar erro interno vazando em prod).
-    // "fetch failed" do undici é só o wrapper — a causa real vem em e.cause.
+    // "fetch failed" do undici é só o wrapper — a causa real vem em e.cause. Log
+    // fica só no servidor (Vercel function logs); cliente recebe mensagem genérica.
     const cause = e instanceof Error && e.cause ? ` | cause: ${String(e.cause)}` : "";
     const msg = (e instanceof Error ? `${e.name}: ${e.message}` : String(e)) + cause;
     console.error("proxy falhou:", msg);
-    return NextResponse.json({ detail: `proxy falhou: ${msg}`, target: TARGET }, { status: 502 });
+    return NextResponse.json({ detail: "não consegui falar com a API" }, { status: 502 });
   }
 }
 
