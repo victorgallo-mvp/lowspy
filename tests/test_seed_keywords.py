@@ -5,7 +5,7 @@ from app.seed_keywords import seed
 CFG = load_config()
 
 
-def test_seed_deriva_keyword_livre_das_hashtags_e_do_meta(session):
+def test_seed_deriva_keyword_livre_so_das_hashtags_nativas(session):
     r = seed(session)
     assert r["inserted"] > 0
 
@@ -15,12 +15,25 @@ def test_seed_deriva_keyword_livre_das_hashtags_e_do_meta(session):
     # reaproveita palavra de hashtag de mercado ativo (formato_digital) -> curada,
     # dispensa confirmação extra na legenda (o termo já prova o nicho, era hashtag)
     assert by_termo["apostila"].mercado == "keyword_livre"
-    # termo exato do Meta Ads -> genérico ("Kit"/preço sozinho não prova nada),
-    # ainda exige confirmação digital na legenda
-    assert by_termo["Apenas R$14,90"].mercado == "keyword_livre_generico"
+    # ambíguo declarado em termos_genericos -> genérico mesmo vindo de mercado curado
+    assert by_termo["colecao"].mercado == "keyword_livre_generico"
+
+    # termo do Meta Ads NÃO entra mais no pool do TikTok (achado real: são frases de
+    # copy de anúncio, renderam zero produto como busca de vídeo — cada fonte agora
+    # tem vocabulário próprio)
+    assert "Apenas R$14,90" not in by_termo
 
     # mercado desativado (fisico_revenda) não entra na keyword livre
     assert "achadinhos" not in by_termo
+
+
+def test_seed_meta_query_continua_so_pro_meta_ads(session):
+    # o termo do Meta Ads continua existindo — só não vira mais keyword-livre do
+    # TikTok. tipo="meta_query" é o pipeline de anúncio (run_sweep_meta), inalterado.
+    seed(session)
+    meta_kw = session.query(Keyword).filter_by(termo="Apenas R$14,90", tipo="meta_query").first()
+    assert meta_kw is not None
+    assert meta_kw.ativo is True
 
 
 def test_seed_desativa_keyword_livre_quando_keyword_search_desliga(session):

@@ -1,8 +1,8 @@
 from collections import Counter
 
 from app.config import load_config
-from app.models import CandidatoMaturacao, Comment, CostLog, Keyword, Post, Produto, Run, Score
-from app.pipeline import ranked_products, run_sweep, run_sweep_meta
+from app.models import CandidatoMaturacao, Comment, CostLog, Keyword, Post, Produto, Run, Score, TermoSugerido
+from app.pipeline import _colher_termos_vencedores, ranked_products, run_sweep, run_sweep_meta
 
 CFG = load_config()
 
@@ -438,3 +438,58 @@ def test_ranked_products_orders_by_score(session):
     assert scores == sorted(scores, reverse=True)  # melhor primeiro
     # LGPD: comentários de intenção sem nickname/uid
     assert "comentarios_intencao" in ranked[0]
+
+
+def _post_produto(session, post_id, desc, run_id, fonte="tiktok"):
+    session.add(Post(id=post_id, fonte=fonte, descricao=desc, market="formato_digital",
+                     idioma="pt", termo_origem="apostila", url=f"https://x.test/{post_id}"))
+    session.commit()
+    session.add(Produto(post_id=post_id, run_id=run_id, mercado="formato_digital",
+                        sinal="demanda_confirmada", score_final=50.0))
+    session.commit()
+
+
+def test_colher_termos_vencedores_sugere_hashtag_repetida(session):
+    run = Run(status="done", mode="live", fonte="tiktok")
+    session.add(run)
+    session.commit()
+    _post_produto(session, "1", "Apostila completa #nichonovo #outraTag", run.id)
+    _post_produto(session, "2", "Outro material bom #nichonovo", run.id)
+
+    n = _colher_termos_vencedores(session, "tiktok", run.id)
+    assert n == 1  # só "nichonovo" apareceu 2x — "outratag" apareceu só 1x
+    session.commit()  # autoflush=False — mesmo padrão do caller real (run_sweep)
+    sugerido = session.query(TermoSugerido).filter_by(termo="nichonovo").first()
+    assert sugerido is not None
+    assert sugerido.fonte == "tiktok"
+    assert "2 produtos" in sugerido.nota
+
+
+def test_colher_termos_vencedores_ignora_ja_ativo_e_ruido(session):
+    session.add(Keyword(termo="apostila", tipo="top", mercado="formato_digital",
+                        sinal_esperado="vendedor", ativo=True))
+    session.commit()
+    run = Run(status="done", mode="live", fonte="tiktok")
+    session.add(run)
+    session.commit()
+    # "apostila" já é keyword ativa, "fyp" é ruído de alcance — nenhum dos dois sugere
+    _post_produto(session, "1", "Material #apostila #fyp #foryou", run.id)
+    _post_produto(session, "2", "Outro #apostila #fyp", run.id)
+
+    n = _colher_termos_vencedores(session, "tiktok", run.id)
+    assert n == 0
+    assert session.query(TermoSugerido).count() == 0
+
+
+def test_colher_termos_vencedores_nao_duplica_sugestao_existente(session):
+    session.add(TermoSugerido(termo="nichonovo", fonte="tiktok", nota="sugerido manualmente antes"))
+    session.commit()
+    run = Run(status="done", mode="live", fonte="tiktok")
+    session.add(run)
+    session.commit()
+    _post_produto(session, "1", "Material #nichonovo", run.id)
+    _post_produto(session, "2", "Outro #nichonovo", run.id)
+
+    n = _colher_termos_vencedores(session, "tiktok", run.id)
+    assert n == 0  # já tinha sido sugerido — não duplica
+    assert session.query(TermoSugerido).filter_by(termo="nichonovo").count() == 1

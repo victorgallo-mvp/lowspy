@@ -17,7 +17,7 @@ from sqlalchemy import select
 
 from . import config
 from .db import SessionLocal, init_db
-from .models import CandidatoMaturacao, Comment, CostLog, Keyword, Post, Produto, Score
+from .models import CandidatoMaturacao, Comment, CostLog, Keyword, Post, Produto, Score, TermoSugerido
 from .scrapecreators import DryRunClient, LiveClient
 from .schemas import ad_details_to_item
 from .signals import (
@@ -25,6 +25,7 @@ from .signals import (
     classify_signal,
     classify_signal_meta,
     detect_idioma,
+    extract_hashtags,
     extract_price,
     final_score,
     intent_score,
@@ -168,6 +169,53 @@ def _registrar_maturacao(session, post_id: str, fonte: str, motivo: str) -> None
     if existente is not None:
         return  # já rastreado (ativo ou já resolvido antes) — não mexe
     session.add(CandidatoMaturacao(post_id=post_id, fonte=fonte, motivo=motivo))
+
+
+# hashtag de alcance genérico — aparece em qualquer vídeo viral, não é sinal de nicho
+_HASHTAG_RUIDO = {
+    "foryou", "foryoupage", "fyp", "fy", "fypage", "viral", "parati", "paratii",
+    "tiktok", "trend", "trending", "capcut", "greenscreen", "viralvideo",
+    "videoviral", "explore", "destaque", "reels", "video", "videos", "fyyyy",
+}
+
+
+def _colher_termos_vencedores(session, fonte: str, run_id: Optional[int]) -> int:
+    """Extrai hashtag dos produtos NOVOS aprovados NESTA varredura, filtra contra
+    vocabulário já ativo/já sugerido/ruído de alcance, e sugere (TermoSugerido) o
+    que aparecer em 2+ produtos aprovados — fecha o ciclo (run bom alimenta o
+    vocabulário do próximo) sem gastar crédito nenhum (só lê legenda já paga)."""
+    if not run_id:
+        return 0
+    vocab_ativo = {
+        k.termo.lower() for k in
+        session.execute(select(Keyword).where(Keyword.ativo == True)).scalars().all()  # noqa: E712
+    }
+    ja_sugerido = {t.termo.lower() for t in session.execute(select(TermoSugerido)).scalars().all()}
+
+    rows = session.execute(
+        select(Post.descricao)
+        .join(Produto, Produto.post_id == Post.id)
+        .where(Produto.run_id == run_id, Post.fonte == fonte)
+    ).all()
+
+    contagem: Counter = Counter()
+    for (desc,) in rows:
+        for h in extract_hashtags(desc or ""):
+            h_norm = h.lower()
+            if len(h_norm) < 4 or h_norm in vocab_ativo or h_norm in ja_sugerido or h_norm in _HASHTAG_RUIDO:
+                continue
+            contagem[h_norm] += 1
+
+    sugeridos = 0
+    for termo, n in contagem.items():
+        if n >= 2:
+            session.add(TermoSugerido(
+                termo=termo, fonte=fonte,
+                nota=f"colhido automaticamente — apareceu em {n} produtos aprovados nesta varredura",
+            ))
+            ja_sugerido.add(termo)
+            sugeridos += 1
+    return sugeridos
 
 
 def _reavaliar_maturacao_tiktok(session, client, cfg: dict, run_id: Optional[int]) -> dict[str, int]:
@@ -406,6 +454,9 @@ def run_sweep(session, cfg: dict, live: bool,
                     it.market = kw.mercado
                     it.termo_origem = kw.termo
                     upsert_post(session, it, it.market)
+                    session.flush()  # garante o post gravado ANTES do FK de maturação
+                                     # apontar pra ele (achado real: Postgres rejeitava,
+                                     # SQLite não pegava — autoflush=False não ordena sozinho)
                     _registrar_maturacao(session, it.id, "tiktok", "comentarios_insuficientes")
                     watchlist_registrados.add(it.id)
                 for it in select_level0_relative(items, keyword_cfg):
@@ -610,6 +661,8 @@ def run_sweep(session, cfg: dict, live: bool,
     finally:
         client.close()
 
+    _colher_termos_vencedores(session, "tiktok", run_id)
+    session.commit()
     return _snapshot()
 
 
@@ -808,6 +861,8 @@ def run_sweep_meta(session, cfg: dict, live: bool, run_id: Optional[int] = None,
                         curto_dropped += 1
                         curto_dias.append(it.dias_ativos)
                         upsert_post_meta(session, it, it.market)
+                        session.flush()  # garante o post gravado ANTES do FK de maturação
+                                         # apontar pra ele (mesmo bug do lado TikTok)
                         _registrar_maturacao(session, it.id, "meta", "dias_ativos_curto")
                         continue
                     if dias_max and it.dias_ativos > dias_max:  # banda travada: velho demais
@@ -902,6 +957,8 @@ def run_sweep_meta(session, cfg: dict, live: bool, run_id: Optional[int] = None,
     finally:
         client.close()
 
+    _colher_termos_vencedores(session, "meta", run_id)
+    session.commit()
     resultado = _snapshot()
     del resultado["termo_atual"]  # só faz sentido em snapshot parcial, não no final
     return resultado

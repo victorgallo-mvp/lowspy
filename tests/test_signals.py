@@ -70,6 +70,15 @@ def test_caption_seller_score_detects_cta():
     assert caption_seller_score("só um vídeo aleatório", CFG)["score"] == 0.0
 
 
+def test_caption_seller_score_detects_gancho_de_quantidade():
+    # padrão achado na engenharia reversa (11 exemplos validados manualmente):
+    # "+N item" é gancho comum de pack/apostila vendido por volume
+    r = caption_seller_score("Apostila com +250 dinâmicas prontas pra usar", CFG)
+    assert r["score"] > 0
+    assert any("250" in h for h in r["hits"])
+    assert caption_seller_score("só um vídeo aleatório sem número nenhum", CFG)["score"] == 0.0
+
+
 def test_classify_signal():
     # demanda confirmada: >= min_intent_comments_for_demand (4) comentários de intenção
     intent = {"n_comentarios_intencao": 4, "score": 5.0}

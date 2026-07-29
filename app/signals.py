@@ -118,6 +118,9 @@ def select_level0_relative(items: list[SearchItem], cfg: dict) -> list[SearchIte
     return ranked[:keep]
 
 
+_QTD_HOOK = re.compile(r"\+\s?\d{2,5}\s+\w+|\b\d{2,5}\s?\+\s+\w+")
+
+
 def caption_seller_score(caption: str, cfg: dict) -> dict[str, Any]:
     """Sinal GRÁTIS de vendedor (CTA + comportamento + checkout na legenda)."""
     w = cfg["weights"]
@@ -134,6 +137,13 @@ def caption_seller_score(caption: str, cfg: dict) -> dict[str, Any]:
                 score += w[gname]
                 hits.append(kw)
                 break
+    # gancho de quantidade ("+250 dinâmicas", "+300 técnicas", "+500 moldes") —
+    # padrão repetido nos 11 exemplos validados manualmente na engenharia reversa,
+    # típico de pack/apostila vendido por volume de conteúdo
+    m = _QTD_HOOK.search(caption or "")
+    if m:
+        score += w.get("quantidade_hook", 0.8)
+        hits.append(m.group(0).strip())
     return {"score": round(score, 2), "hits": hits}
 
 

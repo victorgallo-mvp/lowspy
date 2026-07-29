@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import time
 
-from sqlalchemy import create_engine, inspect, text
+from sqlalchemy import create_engine, event, inspect, text
 from sqlalchemy.exc import OperationalError, ProgrammingError
 from sqlalchemy.orm import declarative_base, sessionmaker
 
@@ -10,13 +10,23 @@ from .config import DATABASE_URL
 
 Base = declarative_base()
 
+_is_sqlite = DATABASE_URL.startswith("sqlite")
 _connect_args = (
     {"check_same_thread": False, "timeout": 30}  # timeout: varredura roda em thread
-    if DATABASE_URL.startswith("sqlite")
+    if _is_sqlite
     else {}
 )
 engine = create_engine(DATABASE_URL, future=True, connect_args=_connect_args)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False, future=True)
+
+if _is_sqlite:
+    # SQLite não aplica chave estrangeira por padrão (é por-conexão, não persiste) —
+    # sem isso, um bug de ordem de insert (post + linha que referencia o post na
+    # mesma transação) passa batido no teste e só quebra em produção (Postgres aplica
+    # sempre). Achado real: foi exatamente isso que derrubou o cron duas vezes.
+    @event.listens_for(engine, "connect")
+    def _habilitar_fk_sqlite(conn, _record):
+        conn.execute("PRAGMA foreign_keys=ON")
 
 
 def get_db():

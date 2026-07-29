@@ -46,27 +46,28 @@ def seed(session=None) -> dict:
             for termo in tags:
                 desired[(termo, "meta_query")] = (market, "vendedor", meta_enabled)
 
-        # Keyword livre no TikTok (/search/top, tipo "top"): reaproveita as MESMAS
-        # palavras já usadas — hashtags dos mercados ativos + termos do Meta Ads —
-        # sem lista própria no yaml, pra não duplicar/divergir.
+        # Keyword livre no TikTok (/search/top, tipo "top"): usa só o vocabulário
+        # NATIVO do TikTok (discovery.markets) — não mais os termos do Meta Ads.
+        #
+        # Achado real (run 32-49): os termos do Meta Ads (frases de copy de anúncio,
+        # tipo "Download imediato", "Apenas R$10", "1000 Atividades") são ótimos pra
+        # busca de TEXTO do Facebook Ad Library, mas renderam ZERO produto no TikTok
+        # em 100% dos casos testados — TikTok é busca de vídeo/nicho, não copy de
+        # anúncio. Cada fonte agora tem vocabulário próprio, sem mistura.
         #
         # Origem importa pro pipeline: termos de mercado digital curado (mesmo
         # vocabulário que já era hashtag confiável) dispensam confirmação extra na
-        # legenda — o próprio termo já prova o nicho. Termos genéricos do Meta Ads
-        # (preço/formato solto, tipo "Kit"/"Apenas R$10") sozinhos não provam nada,
-        # então ainda exigem a legenda confirmar ser digital (mercado "_generico").
+        # legenda — o próprio termo já prova o nicho. Termos ambíguos (palavra comum
+        # do dia a dia, tipo "colecao"/"exercícios") sozinhos não provam nada, então
+        # ainda exigem a legenda confirmar ser digital (mercado "_generico").
         ks = disc.get("keyword_search", {})
         if ks.get("enabled", False):
-            # Ambíguos declarados no config (palavra comum: "colecao", "exercícios",
-            # "kit"...) não ganham passe livre mesmo vindo de mercado digital curado.
             ambiguos = {t.lower() for t in disc.get("termos_genericos", [])}
             termos_curados: set[str] = set()
             for market in enabled:
                 termos_curados.update(disc.get("markets", {}).get(market, []))
             termos_genericos: set[str] = {t for t in termos_curados if t.lower() in ambiguos}
             termos_curados -= termos_genericos
-            for tags in meta.get("keywords", {}).values():
-                termos_genericos.update(t for t in tags if t not in termos_curados)
 
             for termo in termos_curados:
                 desired[(termo, "top")] = ("keyword_livre", "vendedor", True)
