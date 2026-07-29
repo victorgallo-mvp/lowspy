@@ -336,3 +336,33 @@ export async function getFeed(): Promise<FeedResp> {
   if (!r.ok) throw new ApiError(r.status);
   return r.json();
 }
+
+// --- Admin: usuários + visão geral --------------------------------------------
+export type UsuarioAdmin = {
+  id: number;
+  email: string;
+  plano: string;
+  is_admin: boolean;
+  ativo: boolean;
+  created_at: string | null;
+};
+
+export async function getUsuarios(): Promise<UsuarioAdmin[]> {
+  return (await (await _get("/admin/usuarios")).json()).usuarios;
+}
+
+export type OverviewResp = {
+  total_posts: number;
+  posts_por_fonte: Record<string, number>;
+  total_produtos: number;
+  produtos_por_fonte: Record<string, number>;
+  breadth_mercado: Record<string, number>;
+  crescimento_14d: [string, number][];
+  usuarios_por_plano: Record<string, number>;
+  total_usuarios: number;
+  ultimas_varreduras: Record<string, { id: number; status: string; finished_at: string | null }>;
+};
+
+export async function getOverview(): Promise<OverviewResp> {
+  return _get("/admin/overview").then((r) => r.json());
+}

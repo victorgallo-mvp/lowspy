@@ -1,8 +1,15 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { getMe, logout, Usuario } from "@/lib/api";
+
+const ABAS = [
+  { href: "/admin", label: "mineração" },
+  { href: "/admin/visao-geral", label: "visão geral" },
+  { href: "/admin/usuarios", label: "usuários" },
+];
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -46,8 +53,17 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   return (
     <>
       <div className="adminbar">
-        <span>admin · {usuario?.email}</span>
-        <button onClick={sair}>sair</button>
+        <nav className="adminnav">
+          {ABAS.map((a) => (
+            <Link key={a.href} href={a.href} className={pathname === a.href ? "active" : ""}>
+              {a.label}
+            </Link>
+          ))}
+        </nav>
+        <span className="adminbar-right">
+          {usuario?.email}
+          <button onClick={sair}>sair</button>
+        </span>
       </div>
       {children}
     </>

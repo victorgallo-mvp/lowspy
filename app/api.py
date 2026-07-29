@@ -84,8 +84,10 @@ async def csrf_protect(request, call_next):
     return await call_next(request)
 
 
+from .admin_api import router as admin_router  # noqa: E402
 from .auth_api import router as auth_router  # noqa: E402 (após app/middleware, evita ciclo)
 from .feed_api import router as feed_router  # noqa: E402
+app.include_router(admin_router)
 app.include_router(auth_router)
 app.include_router(feed_router)
 
