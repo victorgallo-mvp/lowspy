@@ -8,7 +8,15 @@ from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy import select
 
 from . import config
-from .auth import criar_token, get_current_user_optional, hash_senha, verificar_senha, COOKIE_NAME
+from .auth import (
+    COOKIE_NAME,
+    CSRF_COOKIE_NAME,
+    criar_token,
+    gerar_csrf_token,
+    get_current_user_optional,
+    hash_senha,
+    verificar_senha,
+)
 from .db import get_db
 from .email_service import get_email_service
 from .models import Usuario
@@ -19,14 +27,28 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
-def _set_session_cookie(response: Response, usuario_id: int) -> None:
+def _set_session_cookies(response: Response, usuario_id: int) -> None:
+    # frontend (Vercel) e backend (Railway) são domínios diferentes — SameSite=None
+    # é obrigatório pra sobreviver ao fetch() entre sites (Lax só vale pra navegação
+    # de topo, não pra chamada de API via JS). Exige Secure=true (cookie só viaja em
+    # HTTPS), o que já é o padrão em produção.
     response.set_cookie(
         key=COOKIE_NAME,
         value=criar_token(usuario_id),
         max_age=config.JWT_EXPIRE_MINUTES * 60,
         httponly=True,
         secure=config.COOKIE_SECURE,
-        samesite="lax",
+        samesite="none" if config.COOKIE_SECURE else "lax",
+    )
+    # cookie CSRF: de propósito NÃO httpOnly — o frontend lê e ecoa no header
+    # X-CSRF-Token em toda chamada que muda estado (ver middleware em api.py)
+    response.set_cookie(
+        key=CSRF_COOKIE_NAME,
+        value=gerar_csrf_token(),
+        max_age=config.JWT_EXPIRE_MINUTES * 60,
+        httponly=False,
+        secure=config.COOKIE_SECURE,
+        samesite="none" if config.COOKIE_SECURE else "lax",
     )
 
 
@@ -50,7 +72,7 @@ def registro(payload: dict, response: Response, db=Depends(get_db)):
     db.commit()
 
     get_email_service().enviar(email, "boas_vindas", {"email": email})
-    _set_session_cookie(response, usuario.id)
+    _set_session_cookies(response, usuario.id)
     return _usuario_publico(usuario)
 
 
@@ -64,13 +86,14 @@ def login(payload: dict, response: Response, db=Depends(get_db)):
     if not usuario.ativo:
         raise HTTPException(status_code=403, detail="conta desativada")
 
-    _set_session_cookie(response, usuario.id)
+    _set_session_cookies(response, usuario.id)
     return _usuario_publico(usuario)
 
 
 @router.post("/logout")
 def logout(response: Response):
     response.delete_cookie(COOKIE_NAME)
+    response.delete_cookie(CSRF_COOKIE_NAME)
     return {"ok": True}
 
 

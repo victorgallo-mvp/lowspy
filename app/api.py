@@ -13,10 +13,11 @@ from typing import Any, Optional
 
 from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from sqlalchemy import func, select
 
 from . import config, jobs
-from .auth import require_admin
+from .auth import CSRF_COOKIE_NAME, CSRF_HEADER_NAME, require_admin, verificar_csrf
 from .db import SessionLocal, get_db, init_db
 from .models import CostLog, Post, Produto, ReversoHistorico, Run, Score, TermoSugerido, Usuario
 from .pipeline import DBCost
@@ -55,6 +56,27 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# CSRF: frontend (Vercel) e backend (Railway) são domínios DIFERENTES, então o
+# cookie de sessão precisa de SameSite=None pra sobreviver ao fetch() entre sites
+# — mas isso sozinho permite que QUALQUER site force o navegador do admin a mandar
+# um POST/DELETE autenticado sem querer (CSRF clássico: dispararia varredura paga
+# sem o admin saber). Defesa: token CSRF num cookie separado, legível por JS (não
+# httpOnly) — só JS rodando no NOSSO próprio domínio consegue ler esse cookie e
+# ecoar no header; um site atacante não consegue.
+_CSRF_EXEMPT_PATHS = {"/auth/login", "/auth/registro", "/auth/logout"}
+_CSRF_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+
+
+@app.middleware("http")
+async def csrf_protect(request, call_next):
+    if request.method in _CSRF_METHODS and request.url.path not in _CSRF_EXEMPT_PATHS:
+        cookie_token = request.cookies.get(CSRF_COOKIE_NAME)
+        header_token = request.headers.get(CSRF_HEADER_NAME)
+        if not verificar_csrf(cookie_token, header_token):
+            return JSONResponse({"detail": "csrf inválido ou ausente"}, status_code=403)
+    return await call_next(request)
+
 
 from .auth_api import router as auth_router  # noqa: E402 (após app/middleware, evita ciclo)
 app.include_router(auth_router)

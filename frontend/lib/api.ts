@@ -11,6 +11,16 @@ export const API_BASE = resolveBase();
 // todo fetch pro backend precisa mandar o cookie de sessão (auth via cookie httpOnly)
 const WITH_SESSION: RequestInit = { credentials: "include" };
 
+// CSRF: o backend guarda um cookie legível (não httpOnly) com um token — toda
+// chamada que muda estado (POST/DELETE) precisa ecoar esse valor no header
+// X-CSRF-Token, senão o middleware do backend rejeita com 403. Um site atacante
+// não consegue ler esse cookie (é do nosso domínio), só o nosso próprio JS.
+function csrfHeader(): Record<string, string> {
+  if (typeof document === "undefined") return {};
+  const m = document.cookie.match(/(?:^|;\s*)lowspy_csrf=([^;]+)/);
+  return m ? { "X-CSRF-Token": decodeURIComponent(m[1]) } : {};
+}
+
 export type Produto = {
   post_id: string;
   fonte: "tiktok" | "meta";
@@ -192,8 +202,9 @@ export async function triggerSweep(
   const r = await fetch(`${API_BASE}/varredura?dry=${dry}&fonte=${fonte}`, {
     ...WITH_SESSION,
     method: "POST",
+    headers: csrfHeader(),
   });
-  if (!r.ok) throw new TriggerError(r.status); // 401 sem login, 403 sem role admin, 409 já rodando
+  if (!r.ok) throw new TriggerError(r.status); // 401 sem login, 403 sem role admin/csrf, 409 já rodando
   return r.json();
 }
 
@@ -239,7 +250,11 @@ export async function getReversoHistorico(fonte: "tiktok" | "meta" | "all" = "al
 }
 
 export async function apagarReversoHistorico(id: number): Promise<void> {
-  const r = await fetch(`${API_BASE}/reverso/historico/${id}`, { ...WITH_SESSION, method: "DELETE" });
+  const r = await fetch(`${API_BASE}/reverso/historico/${id}`, {
+    ...WITH_SESSION,
+    method: "DELETE",
+    headers: csrfHeader(),
+  });
   if (!r.ok) throw new Error(`API ${r.status}`);
 }
 
@@ -267,7 +282,7 @@ export async function criarTermoSugerido(
   const r = await fetch(`${API_BASE}/termos-sugeridos`, {
     ...WITH_SESSION,
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...csrfHeader() },
     body: JSON.stringify({ termo, fonte, nota: nota ?? "" }),
   });
   if (!r.ok) {
@@ -278,6 +293,10 @@ export async function criarTermoSugerido(
 }
 
 export async function apagarTermoSugerido(id: number): Promise<void> {
-  const r = await fetch(`${API_BASE}/termos-sugeridos/${id}`, { ...WITH_SESSION, method: "DELETE" });
+  const r = await fetch(`${API_BASE}/termos-sugeridos/${id}`, {
+    ...WITH_SESSION,
+    method: "DELETE",
+    headers: csrfHeader(),
+  });
   if (!r.ok) throw new Error(`API ${r.status}`);
 }

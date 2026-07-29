@@ -4,6 +4,7 @@ tabela, is_admin=True).
 """
 from __future__ import annotations
 
+import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
@@ -17,6 +18,18 @@ from .db import get_db
 from .models import Usuario
 
 COOKIE_NAME = "lowspy_session"
+CSRF_COOKIE_NAME = "lowspy_csrf"
+CSRF_HEADER_NAME = "x-csrf-token"
+
+
+def gerar_csrf_token() -> str:
+    return secrets.token_urlsafe(32)
+
+
+def verificar_csrf(cookie_token: Optional[str], header_token: Optional[str]) -> bool:
+    if not cookie_token or not header_token:
+        return False
+    return secrets.compare_digest(cookie_token, header_token)
 
 
 def hash_senha(senha: str) -> str:

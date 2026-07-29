@@ -19,6 +19,9 @@ def _admin_client(session) -> TestClient:
     c = TestClient(app)
     r = c.post("/auth/login", json={"email": "admin@teste.com", "senha": "senhaadmin123"})
     assert r.status_code == 200
+    # header CSRF fixo no client — todo POST/DELETE dele já sai protegido, igual o
+    # frontend faz lendo o cookie legível e ecoando no header (ver lib/api.ts)
+    c.headers["X-CSRF-Token"] = c.cookies["lowspy_csrf"]
     return c
 
 
@@ -238,7 +241,38 @@ def test_varreduras_lista_e_filtro_por_run(session):
 
 
 def test_varredura_exige_login_admin(session):
-    assert client.post("/varredura?dry=true").status_code == 401  # sem login
+    # middleware de CSRF roda antes da checagem de login — sem cookie/header CSRF
+    # nenhum (visitante anônimo), barra em 403 antes mesmo de chegar no require_admin
+    assert client.post("/varredura?dry=true").status_code == 403
+
+
+def test_csrf_bloqueia_post_sem_header_mesmo_logado(session):
+    # admin logado (cookie de sessão válido) mas SEM o header X-CSRF-Token —
+    # front e back são domínios diferentes (Vercel/Railway), então o cookie de
+    # sessão sozinho não basta: um site atacante também conseguiria mandar o
+    # cookie (SameSite=None), só não consegue LER o cookie CSRF pra ecoar no header
+    session.add(Usuario(email="admin2@teste.com", senha_hash=hash_senha("senhaadmin123"),
+                        is_admin=True, ativo=True))
+    session.commit()
+    c = TestClient(app)
+    r = c.post("/auth/login", json={"email": "admin2@teste.com", "senha": "senhaadmin123"})
+    assert r.status_code == 200
+    assert "lowspy_csrf" in r.cookies  # cookie CSRF veio junto do login
+
+    # sem header algum -> barrado
+    assert c.post("/varredura?dry=true").status_code == 403
+    # header com valor errado (não bate com o cookie) -> barrado também
+    r2 = c.post("/varredura?dry=true", headers={"X-CSRF-Token": "valor-forjado-qualquer"})
+    assert r2.status_code == 403
+    # header certo (ecoando o cookie) -> passa
+    c.headers["X-CSRF-Token"] = c.cookies["lowspy_csrf"]
+    assert c.post("/varredura?dry=true").status_code == 200
+
+
+def test_csrf_nao_exigido_em_get(session):
+    c = _admin_client(session)
+    del c.headers["X-CSRF-Token"]  # GET não muda estado — não deveria precisar
+    assert c.get("/produtos").status_code == 200
 
 
 def test_varredura_exige_role_admin_nao_so_login(session):
@@ -249,4 +283,5 @@ def test_varredura_exige_role_admin_nao_so_login(session):
     c = TestClient(app)
     r = c.post("/auth/login", json={"email": "cliente@teste.com", "senha": "senhacliente123"})
     assert r.status_code == 200
+    c.headers["X-CSRF-Token"] = c.cookies["lowspy_csrf"]  # senão barra no CSRF antes de chegar no role
     assert c.post("/varredura?dry=true").status_code == 403
