@@ -1,14 +1,9 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-  // Proxy same-origin (/api/*) pro backend (Railway) — evita cookie cross-site
-  // (Vercel ≠ Railway = domínios diferentes de verdade). Navegador só fala com o
-  // próprio domínio; o Next faz o repasse servidor-a-servidor por trás. Sem isso,
-  // Safari (ITP) e navegadores com bloqueio de cookie de terceiro derrubam a sessão
-  // mesmo com SameSite=None — CORS/SameSite não resolvem esse caso, só same-origin.
-  async rewrites() {
-    const target = process.env.API_PROXY_TARGET || "http://localhost:8000";
-    return [{ source: "/api/:path*", destination: `${target}/:path*` }];
-  },
+  // Same-origin (/api/*) pro backend (Railway): app/api/[...path]/route.ts faz o
+  // repasse manualmente (código normal, com fetch()) — não usa rewrites() porque
+  // essa feature passa pelo filtro de borda da Vercel, que bloqueou o domínio da
+  // Railway com DNS_HOSTNAME_RESOLVED_PRIVATE mesmo sendo um IP público de verdade.
 };
 module.exports = nextConfig;
