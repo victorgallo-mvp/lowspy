@@ -198,3 +198,16 @@ class ReversoHistorico(Base):
     ativo = Column(Boolean, nullable=True)         # meta: anúncio ainda ativo?
     creditos_gastos = Column(Integer, nullable=True)
     created_at = Column(DateTime, server_default=func.now())
+
+
+class Usuario(Base):
+    """Conta de login — cliente pagante (área /app) ou admin (área /admin, is_admin=True)."""
+
+    __tablename__ = "usuarios"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    email = Column(String(255), nullable=False, unique=True, index=True)
+    senha_hash = Column(String(100), nullable=False)
+    is_admin = Column(Boolean, nullable=False, default=False)
+    ativo = Column(Boolean, nullable=False, default=True)  # soft-disable (sem apagar histórico)
+    created_at = Column(DateTime, server_default=func.now())

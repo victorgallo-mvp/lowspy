@@ -3,6 +3,9 @@ import tempfile
 
 # DB de teste isolado (SQLite temp) ANTES de importar app.* — engine binda no import.
 os.environ["DATABASE_URL"] = "sqlite:///" + os.path.join(tempfile.mkdtemp(), "test.db")
+# TestClient roda sobre http (não https) — cookie Secure=True nunca voltaria no request
+os.environ.setdefault("COOKIE_SECURE", "false")
+os.environ.setdefault("JWT_SECRET", "segredo-de-teste-nao-usar-em-producao")
 
 import pytest  # noqa: E402
 

@@ -8,6 +8,9 @@ function resolveBase(): string {
 
 export const API_BASE = resolveBase();
 
+// todo fetch pro backend precisa mandar o cookie de sessão (auth via cookie httpOnly)
+const WITH_SESSION: RequestInit = { credentials: "include" };
+
 export type Produto = {
   post_id: string;
   fonte: "tiktok" | "meta";
@@ -77,6 +80,45 @@ export type Varredura = {
   n_produtos: number;
 };
 
+// --- Auth --------------------------------------------------------------------
+export type Usuario = { id: number; email: string; is_admin: boolean };
+
+export async function login(email: string, senha: string): Promise<Usuario> {
+  const r = await fetch(`${API_BASE}/auth/login`, {
+    ...WITH_SESSION,
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, senha }),
+  });
+  if (!r.ok) {
+    const body = await r.json().catch(() => null);
+    throw new Error(body?.detail || `API ${r.status}`);
+  }
+  return r.json();
+}
+
+export async function logout(): Promise<void> {
+  await fetch(`${API_BASE}/auth/logout`, { ...WITH_SESSION, method: "POST" });
+}
+
+export async function getMe(): Promise<Usuario | null> {
+  const r = await fetch(`${API_BASE}/auth/eu`, { ...WITH_SESSION, cache: "no-store" });
+  if (!r.ok) return null;
+  return r.json();
+}
+
+export class ApiError extends Error {
+  constructor(public code: number) {
+    super(`API ${code}`);
+  }
+}
+
+async function _get(path: string): Promise<Response> {
+  const r = await fetch(`${API_BASE}${path}`, { ...WITH_SESSION, cache: "no-store" });
+  if (!r.ok) throw new ApiError(r.status);
+  return r;
+}
+
 export async function getProdutos(f: Filtros): Promise<ProdutosResp> {
   const q = new URLSearchParams();
   if (f.min_score) q.set("min_score", String(f.min_score));
@@ -89,21 +131,15 @@ export async function getProdutos(f: Filtros): Promise<ProdutosResp> {
   q.set("limit", String(f.limit ?? 60));
   q.set("fonte", f.fonte ?? "all");
   q.set("idioma", f.idioma ?? "pt");
-  const r = await fetch(`${API_BASE}/produtos?${q.toString()}`, { cache: "no-store" });
-  if (!r.ok) throw new Error(`API ${r.status}`);
-  return r.json();
+  return (await _get(`/produtos?${q.toString()}`)).json();
 }
 
 export async function getVarreduras(): Promise<Varredura[]> {
-  const r = await fetch(`${API_BASE}/varreduras`, { cache: "no-store" });
-  if (!r.ok) throw new Error(`API ${r.status}`);
-  return (await r.json()).varreduras;
+  return (await (await _get("/varreduras")).json()).varreduras;
 }
 
 export async function getCusto(): Promise<CustoResp> {
-  const r = await fetch(`${API_BASE}/custo/dia`, { cache: "no-store" });
-  if (!r.ok) throw new Error(`API ${r.status}`);
-  return r.json();
+  return (await _get("/custo/dia")).json();
 }
 
 export type RunSnapshot = {
@@ -151,21 +187,18 @@ export class TriggerError extends Error {
 
 export async function triggerSweep(
   dry: boolean,
-  token?: string,
   fonte: "tiktok" | "meta" = "tiktok"
 ): Promise<{ run_id: number }> {
   const r = await fetch(`${API_BASE}/varredura?dry=${dry}&fonte=${fonte}`, {
+    ...WITH_SESSION,
     method: "POST",
-    headers: token ? { "X-API-Token": token } : {},
   });
-  if (!r.ok) throw new TriggerError(r.status); // 401 token, 409 já rodando
+  if (!r.ok) throw new TriggerError(r.status); // 401 sem login, 403 sem role admin, 409 já rodando
   return r.json();
 }
 
 export async function getRun(id: number): Promise<Run> {
-  const r = await fetch(`${API_BASE}/varredura/${id}`, { cache: "no-store" });
-  if (!r.ok) throw new Error(`API ${r.status}`);
-  return r.json();
+  return (await _get(`/varredura/${id}`)).json();
 }
 
 export type Reverso = {
@@ -188,39 +221,30 @@ export type Reverso = {
   created_at?: string | null;
 };
 
-async function _analisarLink(path: string, url: string, token?: string): Promise<Reverso> {
-  const r = await fetch(`${API_BASE}${path}?url=${encodeURIComponent(url)}`, {
-    headers: token ? { "X-API-Token": token } : {},
-  });
+async function _analisarLink(path: string, url: string): Promise<Reverso> {
+  const r = await fetch(`${API_BASE}${path}?url=${encodeURIComponent(url)}`, WITH_SESSION);
   if (!r.ok) {
-    if (r.status === 401) throw new TriggerError(401);
+    if (r.status === 401 || r.status === 403) throw new TriggerError(r.status);
     const body = await r.json().catch(() => null);
     throw new Error(body?.detail || `API ${r.status}`);
   }
   return r.json();
 }
 
-export const analisarLinkTiktok = (url: string, token?: string) =>
-  _analisarLink("/reverso/tiktok", url, token);
-
-export const analisarLinkMeta = (url: string, token?: string) =>
-  _analisarLink("/reverso/meta", url, token);
+export const analisarLinkTiktok = (url: string) => _analisarLink("/reverso/tiktok", url);
+export const analisarLinkMeta = (url: string) => _analisarLink("/reverso/meta", url);
 
 export async function getReversoHistorico(fonte: "tiktok" | "meta" | "all" = "all"): Promise<Reverso[]> {
-  const r = await fetch(`${API_BASE}/reverso/historico?fonte=${fonte}`, { cache: "no-store" });
-  if (!r.ok) throw new Error(`API ${r.status}`);
-  return (await r.json()).historico;
+  return (await (await _get(`/reverso/historico?fonte=${fonte}`)).json()).historico;
 }
 
 export async function apagarReversoHistorico(id: number): Promise<void> {
-  const r = await fetch(`${API_BASE}/reverso/historico/${id}`, { method: "DELETE" });
+  const r = await fetch(`${API_BASE}/reverso/historico/${id}`, { ...WITH_SESSION, method: "DELETE" });
   if (!r.ok) throw new Error(`API ${r.status}`);
 }
 
 export async function getLatestRun(): Promise<{ running: boolean; ultima: Run | null }> {
-  const r = await fetch(`${API_BASE}/varredura/status`, { cache: "no-store" });
-  if (!r.ok) throw new Error(`API ${r.status}`);
-  return r.json();
+  return _get("/varredura/status").then((r) => r.json());
 }
 
 export type TermoSugerido = {
@@ -232,9 +256,7 @@ export type TermoSugerido = {
 };
 
 export async function getTermosSugeridos(): Promise<TermoSugerido[]> {
-  const r = await fetch(`${API_BASE}/termos-sugeridos`, { cache: "no-store" });
-  if (!r.ok) throw new Error(`API ${r.status}`);
-  return (await r.json()).termos;
+  return (await (await _get("/termos-sugeridos")).json()).termos;
 }
 
 export async function criarTermoSugerido(
@@ -243,6 +265,7 @@ export async function criarTermoSugerido(
   nota?: string
 ): Promise<TermoSugerido> {
   const r = await fetch(`${API_BASE}/termos-sugeridos`, {
+    ...WITH_SESSION,
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ termo, fonte, nota: nota ?? "" }),
@@ -255,6 +278,6 @@ export async function criarTermoSugerido(
 }
 
 export async function apagarTermoSugerido(id: number): Promise<void> {
-  const r = await fetch(`${API_BASE}/termos-sugeridos/${id}`, { method: "DELETE" });
+  const r = await fetch(`${API_BASE}/termos-sugeridos/${id}`, { ...WITH_SESSION, method: "DELETE" });
   if (!r.ok) throw new Error(`API ${r.status}`);
 }

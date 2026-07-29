@@ -11,13 +11,14 @@ from collections import defaultdict
 from contextlib import asynccontextmanager
 from typing import Any, Optional
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Query
+from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import func, select
 
 from . import config, jobs
-from .db import SessionLocal, init_db
-from .models import CostLog, Post, Produto, ReversoHistorico, Run, Score, TermoSugerido
+from .auth import require_admin
+from .db import SessionLocal, get_db, init_db
+from .models import CostLog, Post, Produto, ReversoHistorico, Run, Score, TermoSugerido, Usuario
 from .pipeline import DBCost
 from .scrapecreators import DryRunClient, LiveClient
 from .schemas import facebook_ad_to_item
@@ -55,13 +56,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+from .auth_api import router as auth_router  # noqa: E402 (após app/middleware, evita ciclo)
+app.include_router(auth_router)
 
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
+
+# get_db (session por request) mora em db.py — reusado por auth.py sem import circular
 
 
 def _serialize(pr: Produto, post: Post, sc: Score) -> dict:
@@ -127,6 +126,7 @@ def _latest_run_id(db, fonte: str = "all") -> Optional[int]:
 @app.get("/produtos")
 def listar_produtos(
     db=Depends(get_db),
+    _admin: Usuario = Depends(require_admin),
     limit: int = Query(60, ge=1, le=200),
     min_score: float = Query(0.0, ge=0, le=100),
     min_views: int = Query(0, ge=0),
@@ -187,7 +187,7 @@ def listar_produtos(
 
 
 @app.get("/produtos/{post_id}")
-def detalhe_produto(post_id: str, db=Depends(get_db)):
+def detalhe_produto(post_id: str, db=Depends(get_db), _admin: Usuario = Depends(require_admin)):
     row = db.execute(
         select(Produto, Post, Score)
         .join(Post, Produto.post_id == Post.id)
@@ -200,7 +200,7 @@ def detalhe_produto(post_id: str, db=Depends(get_db)):
 
 
 @app.get("/custo/dia")
-def custo_dia(db=Depends(get_db)):
+def custo_dia(db=Depends(get_db), _admin: Usuario = Depends(require_admin)):
     """Custo por dia: requests do ScrapeCreators (≈1 crédito/req) + tokens Haiku."""
     rows = db.execute(select(CostLog)).scalars().all()
     per_day: dict = defaultdict(lambda: {"scrape_requests": 0, "haiku_usd": 0.0})
@@ -224,15 +224,6 @@ def custo_dia(db=Depends(get_db)):
 
 
 # --------------------------------------------------------------------------- #
-# Varredura disparada pelo dashboard (assíncrona)
-# --------------------------------------------------------------------------- #
-def _require_token(x_api_token: Optional[str]) -> None:
-    """Protege o disparo pago. Sem TRIGGER_TOKEN setado (dev) = liberado."""
-    if config.TRIGGER_TOKEN and x_api_token != config.TRIGGER_TOKEN:
-        raise HTTPException(status_code=401, detail="token inválido")
-
-
-# --------------------------------------------------------------------------- #
 # Engenharia reversa: cola o link de um produto validado, vê legenda/hashtags/
 # comentários — só análise, não escreve em posts/produtos (decide depois como
 # aproveitar isso no sistema).
@@ -242,9 +233,8 @@ def reverso_tiktok(
     url: str = Query(..., description="link do vídeo do TikTok"),
     dry: bool = Query(False, description="true = dry-run (fixture, gasto zero)"),
     db=Depends(get_db),
-    x_api_token: Optional[str] = Header(None),
+    _admin: Usuario = Depends(require_admin),
 ):
-    _require_token(x_api_token)
     url = url.strip()
     if not url:
         raise HTTPException(status_code=400, detail="url obrigatória")
@@ -325,9 +315,8 @@ def reverso_meta(
     url: str = Query(..., description="link do anúncio no Meta Ad Library"),
     dry: bool = Query(False, description="true = dry-run (fixture, gasto zero)"),
     db=Depends(get_db),
-    x_api_token: Optional[str] = Header(None),
+    _admin: Usuario = Depends(require_admin),
 ):
-    _require_token(x_api_token)
     url = url.strip()
     if not url:
         raise HTTPException(status_code=400, detail="url obrigatória")
@@ -443,6 +432,7 @@ def _serialize_reverso(h: ReversoHistorico) -> dict:
 @app.get("/reverso/historico")
 def reverso_historico(
     db=Depends(get_db),
+    _admin: Usuario = Depends(require_admin),
     limit: int = Query(50, ge=1, le=200),
     fonte: str = Query("all", description="tiktok | meta | all"),
 ):
@@ -455,7 +445,7 @@ def reverso_historico(
 
 
 @app.delete("/reverso/historico/{item_id}")
-def apagar_reverso_historico(item_id: int, db=Depends(get_db)):
+def apagar_reverso_historico(item_id: int, db=Depends(get_db), _admin: Usuario = Depends(require_admin)):
     h = db.get(ReversoHistorico, item_id)
     if not h:
         raise HTTPException(status_code=404, detail="registro não encontrado")
@@ -469,7 +459,7 @@ def apagar_reverso_historico(item_id: int, db=Depends(get_db)):
 # pra avaliar depois, NÃO entra na varredura sozinho (grátis, sem custo de API).
 # --------------------------------------------------------------------------- #
 @app.post("/termos-sugeridos")
-def criar_termo_sugerido(payload: dict, db=Depends(get_db)):
+def criar_termo_sugerido(payload: dict, db=Depends(get_db), _admin: Usuario = Depends(require_admin)):
     termo = (payload.get("termo") or "").strip()
     if not termo:
         raise HTTPException(status_code=400, detail="termo obrigatório")
@@ -486,7 +476,8 @@ def criar_termo_sugerido(payload: dict, db=Depends(get_db)):
 
 
 @app.get("/termos-sugeridos")
-def listar_termos_sugeridos(db=Depends(get_db), limit: int = Query(100, ge=1, le=500)):
+def listar_termos_sugeridos(db=Depends(get_db), _admin: Usuario = Depends(require_admin),
+                            limit: int = Query(100, ge=1, le=500)):
     rows = db.execute(
         select(TermoSugerido).order_by(TermoSugerido.id.desc()).limit(limit)
     ).scalars().all()
@@ -502,7 +493,7 @@ def listar_termos_sugeridos(db=Depends(get_db), limit: int = Query(100, ge=1, le
 
 
 @app.delete("/termos-sugeridos/{termo_id}")
-def apagar_termo_sugerido(termo_id: int, db=Depends(get_db)):
+def apagar_termo_sugerido(termo_id: int, db=Depends(get_db), _admin: Usuario = Depends(require_admin)):
     t = db.get(TermoSugerido, termo_id)
     if not t:
         raise HTTPException(status_code=404, detail="termo não encontrado")
@@ -530,9 +521,8 @@ def disparar_varredura(
     db=Depends(get_db),
     dry: bool = Query(False, description="true = dry-run (fixtures, gasto zero)"),
     fonte: str = Query("tiktok", description="tiktok | meta"),
-    x_api_token: Optional[str] = Header(None),
+    _admin: Usuario = Depends(require_admin),
 ):
-    _require_token(x_api_token)
     if fonte not in ("tiktok", "meta"):
         raise HTTPException(status_code=400, detail="fonte inválida (tiktok|meta)")
     run_id = jobs.start_sweep(db, live=not dry, fonte=fonte)
@@ -542,13 +532,13 @@ def disparar_varredura(
 
 
 @app.get("/varredura/status")
-def varredura_status(db=Depends(get_db)):
+def varredura_status(db=Depends(get_db), _admin: Usuario = Depends(require_admin)):
     run = db.execute(select(Run).order_by(Run.id.desc())).scalars().first()
     return {"running": jobs.is_running(), "ultima": _run_dict(run) if run else None}
 
 
 @app.get("/varredura/{run_id}")
-def varredura_run(run_id: int, db=Depends(get_db)):
+def varredura_run(run_id: int, db=Depends(get_db), _admin: Usuario = Depends(require_admin)):
     run = db.get(Run, run_id)
     if not run:
         raise HTTPException(status_code=404, detail="run não encontrado")
@@ -556,7 +546,8 @@ def varredura_run(run_id: int, db=Depends(get_db)):
 
 
 @app.get("/varreduras")
-def listar_varreduras(db=Depends(get_db), limit: int = Query(20, ge=1, le=100)):
+def listar_varreduras(db=Depends(get_db), _admin: Usuario = Depends(require_admin),
+                      limit: int = Query(20, ge=1, le=100)):
     """Varreduras recentes + nº de produtos de cada — alimenta o seletor do dash."""
     runs = db.execute(select(Run).order_by(Run.id.desc()).limit(limit)).scalars().all()
     counts = dict(

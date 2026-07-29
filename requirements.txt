@@ -9,5 +9,8 @@ psycopg[binary]>=3.1      # driver Postgres (Railway); testes rodam em SQLite
 anthropic>=0.40           # Nível 2 (extração Haiku Batch)
 fastapi>=0.110            # Fase 3 — API
 uvicorn[standard]>=0.29   # ASGI server (Railway web)
+# Fase 4 — auth (usuário + admin)
+bcrypt>=4.1
+python-jose[cryptography]>=3.3
 # Testes:
 pytest>=8.0

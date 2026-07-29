@@ -19,6 +19,15 @@ engine = create_engine(DATABASE_URL, future=True, connect_args=_connect_args)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False, future=True)
 
 
+def get_db():
+    """Dependency de sessão por request — fonte única (api.py e auth.py reusam)."""
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
 def _ensure_columns() -> None:
     """Migração leve idempotente: create_all NÃO altera tabela existente, então
     adicionamos colunas novas via ALTER (portável SQLite/Postgres).
