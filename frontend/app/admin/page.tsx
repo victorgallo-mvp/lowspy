@@ -454,10 +454,7 @@ export default function Dashboard() {
       </section>
 
       {err ? (
-        <div className="state err">
-          erro: {err} · confira se a API está no ar em{" "}
-          <b>{process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}</b>
-        </div>
+        <div className="state err">erro: {err} · confira se a API está no ar</div>
       ) : loading && !data ? (
         <div className="state">carregando o radar…</div>
       ) : data && data.produtos.length === 0 ? (
