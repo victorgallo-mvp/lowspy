@@ -47,10 +47,12 @@ async function proxy(req: NextRequest, path: string[]): Promise<NextResponse> {
     return new NextResponse(buf, { status: upstream.status, headers: resHeaders });
   } catch (e) {
     // temporário: expõe o motivo real do 500 pra diagnosticar — tirar depois de
-    // confirmado o proxy funcionando (não deixar erro interno vazando em prod)
-    const msg = e instanceof Error ? `${e.name}: ${e.message}` : String(e);
+    // confirmado o proxy funcionando (não deixar erro interno vazando em prod).
+    // "fetch failed" do undici é só o wrapper — a causa real vem em e.cause.
+    const cause = e instanceof Error && e.cause ? ` | cause: ${String(e.cause)}` : "";
+    const msg = (e instanceof Error ? `${e.name}: ${e.message}` : String(e)) + cause;
     console.error("proxy falhou:", msg);
-    return NextResponse.json({ detail: `proxy falhou: ${msg}` }, { status: 502 });
+    return NextResponse.json({ detail: `proxy falhou: ${msg}`, target: TARGET }, { status: 502 });
   }
 }
 
