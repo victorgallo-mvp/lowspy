@@ -211,3 +211,21 @@ class Usuario(Base):
     is_admin = Column(Boolean, nullable=False, default=False)
     ativo = Column(Boolean, nullable=False, default=True)  # soft-disable (sem apagar histórico)
     created_at = Column(DateTime, server_default=func.now())
+
+
+class CandidatoMaturacao(Base):
+    """Post/anúncio que caiu no filtro só por motivo TEMPORAL (poucos dias ativos
+    ainda, poucos comentários ainda) — não por motivo permanente (físico, high-
+    ticket, idioma). Reavaliado nos próximos runs via video_info/ad_details (1
+    crédito, sem re-buscar) até bater o critério, esgotar tentativas ou o prazo."""
+
+    __tablename__ = "candidatos_maturacao"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    post_id = Column(String(64), ForeignKey("posts.id"), nullable=False, unique=True)
+    fonte = Column(String(10), nullable=False)  # tiktok | meta
+    motivo = Column(String(30), nullable=False)  # comentarios_insuficientes | dias_ativos_curto
+    primeira_vez_visto = Column(DateTime, server_default=func.now())
+    tentativas = Column(Integer, nullable=False, default=0)
+    ultima_tentativa = Column(DateTime, nullable=True)
+    ativo = Column(Boolean, nullable=False, default=True)

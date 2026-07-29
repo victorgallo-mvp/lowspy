@@ -1,7 +1,7 @@
 from collections import Counter
 
 from app.config import load_config
-from app.models import Comment, CostLog, Keyword, Post, Produto, Run, Score
+from app.models import CandidatoMaturacao, Comment, CostLog, Keyword, Post, Produto, Run, Score
 from app.pipeline import ranked_products, run_sweep, run_sweep_meta
 
 CFG = load_config()
@@ -119,9 +119,13 @@ def test_sweep_is_idempotent(session):
     posts_1 = session.query(Post).count()
     scores_1 = session.query(Score).count()
 
-    run_sweep(session, CFG, live=False)  # re-varredura
-    assert session.query(Post).count() == posts_1  # não duplica post
-    assert session.query(Score).count() == scores_1  # 1 score por post
+    r2 = run_sweep(session, CFG, live=False)  # re-varredura
+    # +1 é esperado, não bug: 1 post abaixo do piso de comentário no run 1 entrou na
+    # fila de maturação; o fixture de video_info sempre devolve 512 comentários —
+    # "amadurece" e ganha Score novo no run 2. É a maturação funcionando.
+    assert r2["maturacao_resgatados"] == 1
+    assert session.query(Post).count() == posts_1  # não duplica post (maturação só avalia, não cria)
+    assert session.query(Score).count() == scores_1 + 1
 
 
 def test_run_id_separa_por_varredura(session):
@@ -147,10 +151,55 @@ def test_pular_vistos_novidade(session):
     run_sweep(session, CFG, live=False)  # 1ª: tudo novo
     prod_1 = session.query(Produto).count()
     assert prod_1 >= 1
-    # 2ª com pular_vistos (default): re-acha os mesmos → pula → não cria novos
+    # 2ª com pular_vistos (default): re-acha os mesmos → pula → não cria novos (exceto
+    # maturação: 1 post abaixo do piso no run 1 "amadurece" no run 2 — não é duplicata,
+    # é um post que nunca tinha virado produto antes)
     r = run_sweep(session, CFG, live=False)
     assert r["vistos_pulados"] >= 1
-    assert session.query(Produto).count() == prod_1  # não duplicou
+    assert r["maturacao_resgatados"] == 1
+    assert session.query(Produto).count() == prod_1 + 1
+
+
+def test_run_sweep_registra_candidato_maturacao_quando_abaixo_do_piso(session):
+    _seed_keyword(session)
+    run_sweep(session, CFG, live=False)
+    candidatos = session.query(CandidatoMaturacao).all()
+    assert len(candidatos) == 1  # só o item de 8 comentários (abaixo do piso 30) da fixture
+    cm = candidatos[0]
+    assert cm.fonte == "tiktok"
+    assert cm.motivo == "comentarios_insuficientes"
+    assert cm.tentativas == 0
+    assert cm.ativo is True
+
+
+def test_run_sweep_maturacao_esgota_tentativas(session):
+    import copy
+    from app.scrapecreators import DryRunClient
+
+    class NuncaMaturaClient(DryRunClient):
+        def video_info(self, url):
+            self._spend("video_info", {"url": url})
+            return {**self._video_info.get("aweme_detail", {}),
+                   "statistics": {"play_count": 100, "digg_count": 1, "comment_count": 1, "share_count": 0}}
+
+    import app.pipeline as mod
+    original = mod.DryRunClient
+    mod.DryRunClient = NuncaMaturaClient
+    try:
+        cfg = copy.deepcopy(CFG)
+        cfg["discovery"]["maturacao"]["max_tentativas"] = 2
+        _seed_keyword(session)
+        run_sweep(session, cfg, live=False)  # cria o candidato (0 tentativas)
+        run_sweep(session, cfg, live=False)  # tentativa 1 — ainda abaixo do piso, continua ativo
+        cm = session.query(CandidatoMaturacao).one()
+        assert cm.tentativas == 1
+        assert cm.ativo is True
+        run_sweep(session, cfg, live=False)  # tentativa 2 — esgotou max_tentativas
+        session.refresh(cm)
+        assert cm.tentativas == 2
+        assert cm.ativo is False  # desistiu — não reavalia mais (perdido, tradeoff aceito)
+    finally:
+        mod.DryRunClient = original
 
 
 def test_run_sweep_usa_search_top_para_keyword_livre(session):
@@ -301,8 +350,59 @@ def test_run_sweep_meta_idempotente(session):
     _seed_keyword_meta(session)
     run_sweep_meta(session, CFG, live=False)
     n1 = session.query(Produto).count()
-    run_sweep_meta(session, CFG, live=False)  # re-varredura: pular_vistos evita duplicar
-    assert session.query(Produto).count() == n1
+    ids_1 = {p.post_id for p in session.query(Produto).all()}
+    r2 = run_sweep_meta(session, CFG, live=False)  # re-varredura: pular_vistos evita duplicar
+    # +1 é esperado, não um bug: o item curto_dropped do run 1 (4 dias ativos) entrou
+    # na fila de maturação, e o fixture de ad_details sempre devolve 24 dias — "amadurece"
+    # e vira produto novo no run 2. É a maturação funcionando, não falta de idempotência.
+    assert r2["maturacao_resgatados"] == 1
+    assert session.query(Produto).count() == n1 + 1
+    # idempotência de verdade: nenhum produto do run 1 duplicou
+    ids_2 = {p.post_id for p in session.query(Produto).all()}
+    assert ids_1 <= ids_2
+
+
+def test_run_sweep_meta_registra_candidato_maturacao_quando_curto(session):
+    _seed_keyword_meta(session)
+    run_sweep_meta(session, CFG, live=False)
+    candidatos = session.query(CandidatoMaturacao).all()
+    assert len(candidatos) == 1  # só o item de 4 dias ativos (curto) da fixture
+    cm = candidatos[0]
+    assert cm.fonte == "meta"
+    assert cm.motivo == "dias_ativos_curto"
+    assert cm.tentativas == 0
+    assert cm.ativo is True
+
+
+def test_run_sweep_meta_maturacao_esgota_tentativas(session):
+    import copy
+    from app.scrapecreators import DryRunClient
+
+    class NuncaMaturaClient(DryRunClient):
+        def ad_details(self, url):
+            self._spend("ad_details", {"url": url})
+            d = dict(self._ad_details)
+            d["totalActiveTime"] = 1  # sempre curto — nunca bate o mínimo (10)
+            return d
+
+    import app.pipeline as mod
+    original = mod.DryRunClient
+    mod.DryRunClient = NuncaMaturaClient
+    try:
+        cfg = copy.deepcopy(CFG)
+        cfg["discovery"]["maturacao"]["max_tentativas"] = 2
+        _seed_keyword_meta(session)
+        run_sweep_meta(session, cfg, live=False)  # cria o candidato (0 tentativas)
+        run_sweep_meta(session, cfg, live=False)  # tentativa 1 — ainda curto, continua ativo
+        cm = session.query(CandidatoMaturacao).one()
+        assert cm.tentativas == 1
+        assert cm.ativo is True
+        run_sweep_meta(session, cfg, live=False)  # tentativa 2 — esgotou max_tentativas
+        session.refresh(cm)
+        assert cm.tentativas == 2
+        assert cm.ativo is False  # desistiu — não reavalia mais (perdido, tradeoff aceito)
+    finally:
+        mod.DryRunClient = original
 
 
 def test_ranked_products_orders_by_score(session):

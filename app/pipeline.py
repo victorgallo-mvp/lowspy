@@ -10,15 +10,16 @@ import argparse
 import logging
 import time
 from collections import Counter
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Optional
 
 from sqlalchemy import select
 
 from . import config
 from .db import SessionLocal, init_db
-from .models import Comment, CostLog, Keyword, Post, Produto, Score
+from .models import CandidatoMaturacao, Comment, CostLog, Keyword, Post, Produto, Score
 from .scrapecreators import DryRunClient, LiveClient
+from .schemas import ad_details_to_item
 from .signals import (
     caption_seller_score,
     classify_signal,
@@ -34,6 +35,7 @@ from .signals import (
     lang_allowed,
     meta_final_score,
     normalize_score,
+    passes_level0_abs,
     select_level0_relative,
 )
 
@@ -157,6 +159,116 @@ def upsert_produto(session, post, combined: float, sinal: str, preco,
         pr.preco = preco
 
 
+def _registrar_maturacao(session, post_id: str, fonte: str, motivo: str) -> None:
+    """Marca um post/anúncio pra reavaliação futura (motivo TEMPORAL, não
+    permanente) — dedup por post_id: se já tá na fila, não reseta o progresso."""
+    existente = session.execute(
+        select(CandidatoMaturacao).where(CandidatoMaturacao.post_id == post_id)
+    ).scalar_one_or_none()
+    if existente is not None:
+        return  # já rastreado (ativo ou já resolvido antes) — não mexe
+    session.add(CandidatoMaturacao(post_id=post_id, fonte=fonte, motivo=motivo))
+
+
+def _reavaliar_maturacao_tiktok(session, client, cfg: dict, run_id: Optional[int]) -> dict[str, int]:
+    """Post que caiu só por poucos comentários/curtidas AINDA (não por motivo
+    permanente) fica numa fila de reavaliação — pode estar bombando e só não
+    juntou massa ainda. video_info (1 crédito) reconfirma os números atuais sem
+    re-buscar; se passar o piso agora, lê comentário de verdade (só assim dá pra
+    confirmar demanda no TikTok) e avalia igual ao fluxo normal."""
+    mat_cfg = cfg.get("discovery", {}).get("maturacao", {})
+    max_tentativas = mat_cfg.get("max_tentativas", 3)
+    prazo_dias = mat_cfg.get("prazo_dias", 14)
+    orcamento_extra = mat_cfg.get("orcamento_extra", 50)
+    ks_cfg = cfg.get("discovery", {}).get("keyword_search", {})
+    piso_comentarios = ks_cfg.get("abs_min_comments", 100)
+    piso_likes = cfg["thresholds"]["abs_min_likes"]
+    thr = cfg["thresholds"]["intent_threshold"]
+    exigir = cfg["thresholds"].get("exigir_demanda_confirmada", False)
+
+    limite = datetime.utcnow() - timedelta(days=prazo_dias)
+    candidatos = session.execute(
+        select(CandidatoMaturacao).where(
+            CandidatoMaturacao.fonte == "tiktok",
+            CandidatoMaturacao.ativo == True,  # noqa: E712
+            CandidatoMaturacao.tentativas < max_tentativas,
+        )
+    ).scalars().all()
+
+    resgatados = 0
+    tentados = 0
+    for cm in candidatos:
+        if tentados >= orcamento_extra:
+            break
+        post = session.get(Post, cm.post_id)
+        if post is None:
+            cm.ativo = False
+            continue
+        try:
+            aweme = client.video_info(post.url)
+        except Exception as e:
+            LOG.error("Maturação TikTok: video_info falhou p/ %s: %s", post.id, e)
+            continue
+        tentados += 1
+        cm.tentativas += 1
+        cm.ultima_tentativa = datetime.utcnow()
+        stats = (aweme or {}).get("statistics", {}) or {}
+        comment_count = int(stats.get("comment_count") or 0)
+        digg_count = int(stats.get("digg_count") or 0)
+        post.comment_count = comment_count
+        post.digg_count = digg_count
+        post.play_count = int(stats.get("play_count") or post.play_count or 0)
+        maturou = comment_count >= piso_comentarios and digg_count >= piso_likes
+        if maturou:
+            cap = caption_seller_score(post.descricao, cfg)
+            try:
+                comments, _ = client.video_comments(post.url)
+            except Exception as e:
+                LOG.error("Maturação TikTok: video_comments falhou p/ %s: %s", post.id, e)
+                comments = []
+            texts = [c.text for c in comments if c.text]
+            intent = intent_score(texts, post.descricao, cfg)
+            combined = round(intent["score"] + cap["score"], 2)
+            sinal = classify_signal(intent, cap, cfg)
+
+            intent_set = set(intent["matched_comments"])
+            persistidos: set = set()
+            for c in comments:
+                if not c.cid or c.cid in persistidos:
+                    continue
+                persistidos.add(c.cid)
+                comentario = session.get(Comment, {"cid": c.cid, "post_id": post.id})
+                if comentario is None:
+                    comentario = Comment(cid=c.cid, post_id=post.id)
+                    session.add(comentario)
+                comentario.texto = c.text
+                comentario.digg_count = c.digg_count
+                comentario.reply_total = c.reply_comment_total
+                try:
+                    comentario.create_time = int(c.create_time)
+                except (TypeError, ValueError):
+                    comentario.create_time = None
+                comentario.is_intent = c.text in intent_set
+
+            demanda_norm = normalize_score(combined, cfg)
+            score_val, engaj = final_score(demanda_norm, post.play_count, post.digg_count,
+                                           post.comment_count, cfg)
+            upsert_score(session, post.id, intent, cap, score_val, sinal, engaj)
+            post.processed_at = datetime.now(timezone.utc)
+            ok = combined >= thr and (sinal == "demanda_confirmada" if exigir else sinal != "sem_sinal")
+            if ok:
+                upsert_produto(session, post, score_val, sinal, extract_price(post.descricao, *texts),
+                               run_id, novo=False)
+                resgatados += 1
+            cm.ativo = False  # já teve avaliação completa (virou produto ou não) — sai da fila
+            LOG.info("  MATURAÇÃO TikTok [%s] resgatado após %sx, comentarios=%s",
+                     post.id, cm.tentativas, comment_count)
+        elif cm.tentativas >= max_tentativas or _sem_tz(cm.primeira_vez_visto) < _sem_tz(limite):
+            cm.ativo = False  # esgotou tentativas/prazo — perdido (tradeoff aceito, evita custo infinito)
+        session.commit()
+    return {"resgatados": resgatados, "tentados": tentados}
+
+
 # --------------------------------------------------------------------------- #
 # Varredura
 # --------------------------------------------------------------------------- #
@@ -225,6 +337,7 @@ def run_sweep(session, cfg: dict, live: bool,
     nao_digital_dropped = 0  # bateu o termo mas não confirma ser digital
     vistos_pulados = 0
     n0_by_id: dict[str, Any] = {}  # dedup por id (mesmo post surge em várias buscas)
+    watchlist_registrados: set = set()  # evita reprocessar o mesmo item em outra ordenação/página
     thr = cfg["thresholds"]["intent_threshold"]
     pular_vistos = cfg.get("discovery", {}).get("pular_vistos", False)
     now = time.time()
@@ -273,6 +386,28 @@ def run_sweep(session, cfg: dict, live: bool,
                     lang_dropped += len(items) - len(kept)
                     items = kept
                 novos_na_pagina = 0
+                # abaixo do piso de comentário/curtida — não necessariamente RUIM, pode só
+                # estar bombando ainda. Se passa em tudo mais, vira candidato de maturação
+                # em vez de perdido pra sempre (video_info reconfirma sem re-buscar depois).
+                for it in items:
+                    if passes_level0_abs(it, keyword_cfg) or not it.id:
+                        continue  # esse já vai pelo caminho normal (select_level0_relative)
+                    if it.id in n0_by_id or it.id in watchlist_registrados:
+                        continue
+                    if is_fisico(it.desc) or is_high_ticket(it.desc, cfg):
+                        continue
+                    confia_no_termo = kw.mercado == "keyword_livre"
+                    if not confia_no_termo and not is_digital_confirmado(it.desc, cfg):
+                        continue  # termo genérico sem confirmação — não dá pra ler comentário aqui
+                    if ks_recency_days:
+                        ct = it.ct_int()
+                        if ct and (now - float(ct)) > ks_recency_days * 86400:
+                            continue  # já velho — não vai "rejuvenescer", não watchlist
+                    it.market = kw.mercado
+                    it.termo_origem = kw.termo
+                    upsert_post(session, it, it.market)
+                    _registrar_maturacao(session, it.id, "tiktok", "comentarios_insuficientes")
+                    watchlist_registrados.add(it.id)
                 for it in select_level0_relative(items, keyword_cfg):
                     if not it.id or it.id in n0_by_id:
                         continue  # mantém a 1ª ocorrência (inclui achado em outra ordenação)
@@ -447,9 +582,14 @@ def run_sweep(session, cfg: dict, live: bool,
             "breadth": breadth,
             "creditos_gastos": cost.total_credits(),
             "requests": dict(cost.counts),
+            "maturacao_resgatados": maturacao_stats["resgatados"],
+            "maturacao_tentados": maturacao_stats["tentados"],
         }
 
     try:
+        # reavalia a fila de maturação ANTES da busca nova — são posts que já
+        # passaram por todos os outros filtros antes, só faltava comentário/curtida
+        maturacao_stats = _reavaliar_maturacao_tiktok(session, client, cfg, run_id)
         for kw in keywords:
             if survivors >= target or _gasto_total() >= orcamento_total:
                 break
@@ -477,6 +617,72 @@ def run_sweep(session, cfg: dict, live: bool,
 # Varredura Meta Ads (Facebook Ad Library) — fonte separada, sem comentário.
 # Sinal de demanda: TEMPO DE VEICULAÇÃO (doc do operador — anúncio que sobrevive
 # ao teste do mercado), não intenção em comentário.
+def _sem_tz(dt):
+    return dt.replace(tzinfo=None) if dt and dt.tzinfo else dt
+
+
+def _reavaliar_maturacao_meta(session, client, cfg: dict, run_id: Optional[int]) -> dict[str, int]:
+    """Anúncio que caiu só por dias_ativos < mínimo (não por motivo permanente) fica
+    numa fila de reavaliação — dias_ativos só cresce enquanto o anúncio continuar
+    ativo, então uma nova checagem (1 crédito, ad_details, sem re-buscar) pode achar
+    que ele já amadureceu. Teto de tentativas/prazo evita fila infinita (custo)."""
+    mat_cfg = cfg.get("discovery", {}).get("maturacao", {})
+    max_tentativas = mat_cfg.get("max_tentativas", 3)
+    prazo_dias = mat_cfg.get("prazo_dias", 14)
+    orcamento_extra = mat_cfg.get("orcamento_extra", 50)
+    m = cfg.get("meta_ads", {})
+    dias_min = m.get("dias_ativos_min", 15)
+    dias_max = m.get("dias_ativos_max")
+
+    limite = datetime.utcnow() - timedelta(days=prazo_dias)
+    candidatos = session.execute(
+        select(CandidatoMaturacao).where(
+            CandidatoMaturacao.fonte == "meta",
+            CandidatoMaturacao.ativo == True,  # noqa: E712
+            CandidatoMaturacao.tentativas < max_tentativas,
+        )
+    ).scalars().all()
+
+    resgatados = 0
+    tentados = 0
+    for cm in candidatos:
+        if tentados >= orcamento_extra:
+            break
+        post = session.get(Post, cm.post_id)
+        if post is None:  # nunca deveria acontecer (FK), mas não trava a fila por isso
+            cm.ativo = False
+            continue
+        try:
+            ad = client.ad_details(post.url)
+        except Exception as e:
+            LOG.error("Maturação Meta: ad_details falhou p/ %s: %s", post.id, e)
+            continue
+        tentados += 1
+        cm.tentativas += 1
+        cm.ultima_tentativa = datetime.utcnow()
+        item = ad_details_to_item(ad or {})
+        maturou = item.dias_ativos >= dias_min and (not dias_max or item.dias_ativos <= dias_max)
+        if maturou:
+            cap = caption_seller_score(post.descricao, cfg)
+            sinal = classify_signal_meta(item.dias_ativos, cap, cfg)
+            score_val = meta_final_score(item.dias_ativos, item.collation_count, cap["score"], cfg)
+            post.total_active_time = item.dias_ativos
+            post.is_active = item.is_active
+            post.processed_at = datetime.now(timezone.utc)
+            upsert_score_meta(session, post.id, cap, item.dias_ativos, score_val, sinal)
+            if sinal != "sem_sinal":
+                upsert_produto(session, post, score_val, sinal, extract_price(post.descricao),
+                               run_id, novo=False)
+                resgatados += 1
+            cm.ativo = False  # já teve avaliação completa (virou produto ou não) — sai da fila
+            LOG.info("  MATURAÇÃO Meta [%s] resgatado após %sx, dias_ativos=%s",
+                     post.id, cm.tentativas, item.dias_ativos)
+        elif cm.tentativas >= max_tentativas or _sem_tz(cm.primeira_vez_visto) < _sem_tz(limite):
+            cm.ativo = False  # esgotou tentativas/prazo — perdido (tradeoff aceito, evita custo infinito)
+        session.commit()
+    return {"resgatados": resgatados, "tentados": tentados}
+
+
 # --------------------------------------------------------------------------- #
 def run_sweep_meta(session, cfg: dict, live: bool, run_id: Optional[int] = None,
                    on_progress: Optional[Callable[[dict], None]] = None) -> dict[str, Any]:
@@ -518,6 +724,7 @@ def run_sweep_meta(session, cfg: dict, live: bool, run_id: Optional[int] = None,
     survivors = 0
     novos = 0
     candidates: list = []
+    maturacao_stats = {"resgatados": 0, "tentados": 0}
 
     def _snapshot(termo_atual: str = "") -> dict[str, Any]:
         breadth: dict[str, int] = {}
@@ -547,9 +754,20 @@ def run_sweep_meta(session, cfg: dict, live: bool, run_id: Optional[int] = None,
             "creditos_gastos": cost.total_credits(),
             "requests": dict(cost.counts),
             "termo_atual": termo_atual,
+            "maturacao_resgatados": maturacao_stats["resgatados"],
+            "maturacao_tentados": maturacao_stats["tentados"],
         }
 
     try:
+        # reavalia a fila de maturação ANTES da busca nova — são anúncios que já
+        # passaram por todos os outros filtros antes, só faltava tempo
+        maturacao_stats = _reavaliar_maturacao_meta(session, client, cfg, run_id)
+        if on_progress and maturacao_stats["tentados"]:
+            try:
+                on_progress(_snapshot("reavaliando maturação"))
+            except Exception:
+                LOG.exception("on_progress falhou — não interrompe a varredura")
+
         for kw in keywords:
             LOG.info("Busca Meta | %s/%s | %r", kw.mercado, kw.sinal_esperado, kw.termo)
             cursor = None
@@ -578,16 +796,20 @@ def run_sweep_meta(session, cfg: dict, live: bool, run_id: Optional[int] = None,
                     if not is_digital_confirmado(it.desc, cfg):  # keyword sozinha não prova nada
                         nao_digital_dropped += 1
                         continue
-                    if it.dias_ativos < dias_min:  # não sobreviveu ao teste do mercado ainda
-                        curto_dropped += 1
-                        curto_dias.append(it.dias_ativos)
-                        continue
-                    if dias_max and it.dias_ativos > dias_max:  # banda travada: velho demais
-                        longo_dropped += 1
-                        continue
+                    # a partir daqui, já passou por TODO filtro permanente (conteúdo) —
+                    # só falta motivo temporal (tempo de veiculação), que pode mudar
                     it.market = kw.mercado
                     it.sinal_esperado = kw.sinal_esperado
                     it.termo_origem = kw.termo
+                    if it.dias_ativos < dias_min:  # não sobreviveu ao teste do mercado AINDA
+                        curto_dropped += 1
+                        curto_dias.append(it.dias_ativos)
+                        upsert_post_meta(session, it, it.market)
+                        _registrar_maturacao(session, it.id, "meta", "dias_ativos_curto")
+                        continue
+                    if dias_max and it.dias_ativos > dias_max:  # banda travada: velho demais
+                        longo_dropped += 1  # só cresce a partir daqui — não entra na maturação
+                        continue
                     it.novo = it.id not in existing_ids
                     if pular_vistos and not it.novo:
                         vistos_pulados += 1

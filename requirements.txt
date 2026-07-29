@@ -12,5 +12,8 @@ uvicorn[standard]>=0.29   # ASGI server (Railway web)
 # Fase 4 — auth (usuário + admin)
 bcrypt>=4.1
 python-jose[cryptography]>=3.3
+# Fase 2 (SaaS) — cron interno de mineração (mesmo padrão do node-cron: dentro
+# do próprio processo, sem depender de infra externa do Railway)
+apscheduler>=3.10,<4
 # Testes:
 pytest>=8.0

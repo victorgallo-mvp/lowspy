@@ -171,19 +171,23 @@ def test_produtos_filtra_por_idioma_default_pt(session):
     _seed_and_sweep(session)
     c = _admin_client(session)
     # todos os posts da fixture dry-run são pt: default idioma=pt não esconde nada
-    assert c.get("/produtos").json()["total"] >= 1
-    # marca um post como es_en manualmente e confirma que o filtro default o esconde
+    body = c.get("/produtos").json()
+    assert body["total"] >= 1
+    # marca um produto (não um post qualquer — maturação pode ter deixado post sem
+    # Score/Produto no banco, que nunca apareceria em /produtos de qualquer jeito)
+    # como es_en manualmente e confirma que o filtro default o esconde
+    alvo_id = body["produtos"][0]["post_id"]
     from app.db import SessionLocal
     from app.models import Post
     s2 = SessionLocal()
-    post = s2.query(Post).first()
+    post = s2.get(Post, alvo_id)
     post.idioma = "es_en"
     s2.commit()
     s2.close()
     ids_pt = {p["post_id"] for p in c.get("/produtos?idioma=pt").json()["produtos"]}
     ids_all = {p["post_id"] for p in c.get("/produtos?idioma=all").json()["produtos"]}
-    assert post.id not in ids_pt
-    assert post.id in ids_all
+    assert alvo_id not in ids_pt
+    assert alvo_id in ids_all
 
 
 def test_detalhe_404(session):

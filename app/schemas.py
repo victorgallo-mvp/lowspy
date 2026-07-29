@@ -228,3 +228,31 @@ def facebook_ad_to_item(a: dict[str, Any]) -> AdItem:
         publisher_platform=a.get("publisher_platform", []) or [],
         snapshot=AdSnapshot.model_validate(a.get("snapshot", {}) or {}),
     )
+
+
+def _campo(d: dict, *keys, default=None):
+    # a doc do endpoint de detalhe (/adLibrary/ad) usa camelCase; o de busca
+    # (/adLibrary/search/ads) usa snake_case — aceita os dois, não confia numa forma só
+    for k in keys:
+        v = d.get(k)
+        if v is not None:
+            return v
+    return default
+
+
+def ad_details_to_item(ad: dict[str, Any]) -> AdItem:
+    """Normaliza item de /facebook/adLibrary/ad (detalhe de UM anúncio por link) —
+    usado no reverso (/reverso/meta) e na reavaliação de maturação (dias_ativos
+    pode ter crescido desde a 1ª vez que o anúncio foi visto)."""
+    return facebook_ad_to_item({
+        "ad_archive_id": _campo(ad, "adArchiveID", "ad_archive_id", default=""),
+        "page_id": _campo(ad, "pageID", "page_id", default=""),
+        "page_name": _campo(ad, "pageName", "page_name", default=""),
+        "is_active": _campo(ad, "isActive", "is_active"),
+        "start_date": _campo(ad, "startDate", "start_date"),
+        "end_date": _campo(ad, "endDate", "end_date"),
+        "total_active_time": _campo(ad, "totalActiveTime", "total_active_time"),
+        "collation_count": _campo(ad, "collationCount", "collation_count", default=0),
+        "publisher_platform": _campo(ad, "publisherPlatform", "publisher_platform", default=[]),
+        "snapshot": ad.get("snapshot", {}) or {},
+    })

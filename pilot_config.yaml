@@ -158,6 +158,16 @@ discovery:
   # de produtos foi batida — sem isso, com o pool de 100+ palavras, o run não teria
   # fim natural.
   orcamento_total: 1000
+  # Maturação: post/anúncio que caiu no filtro só por motivo TEMPORAL (poucos dias
+  # ativos ainda no Meta, poucos comentários ainda no TikTok) — não por motivo
+  # permanente (físico, high-ticket, idioma) — fica numa fila de reavaliação em vez
+  # de perdido pra sempre. Reavalia via video_info/ad_details (1 crédito, sem
+  # re-buscar) no início de cada run, com orçamento e tentativas própria — sem teto
+  # aqui, a fila cresceria pra sempre e o custo junto (achado already discutido).
+  maturacao:
+    max_tentativas: 3    # desiste depois de N reavaliações sem sucesso
+    prazo_dias: 14        # desiste depois de N dias esperando, mesmo sem esgotar tentativas
+    orcamento_extra: 50   # créditos reservados pra reavaliação, à parte do orcamento_total
   # Termos que devem ser buscados PRIMEIRO, antes de qualquer outro — sem isso, os
   # termos novos sempre ficariam pro final da fila. Não muda o teto de gasto, só a
   # ordem — garante que esses sejam tentados cedo.

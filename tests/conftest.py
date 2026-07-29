@@ -6,6 +6,9 @@ os.environ["DATABASE_URL"] = "sqlite:///" + os.path.join(tempfile.mkdtemp(), "te
 # TestClient roda sobre http (não https) — cookie Secure=True nunca voltaria no request
 os.environ.setdefault("COOKIE_SECURE", "false")
 os.environ.setdefault("JWT_SECRET", "segredo-de-teste-nao-usar-em-producao")
+# TestClient dispara o lifespan (inclusive o scheduler) — nunca deixa o cron real
+# ligado em teste, senão um teste que demorar até 09h/15h UTC dispararia live=True
+os.environ.setdefault("CRON_ENABLED", "0")
 
 import pytest  # noqa: E402
 

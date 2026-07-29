@@ -22,7 +22,7 @@ from .db import SessionLocal, get_db, init_db
 from .models import CostLog, Post, Produto, ReversoHistorico, Run, Score, TermoSugerido, Usuario
 from .pipeline import DBCost
 from .scrapecreators import DryRunClient, LiveClient
-from .schemas import facebook_ad_to_item
+from .schemas import ad_details_to_item
 from .signals import (
     caption_seller_score,
     extract_hashtags,
@@ -41,7 +41,13 @@ async def lifespan(app: FastAPI):
         from .seed_keywords import seed
         seed()
     jobs.reset_stale()  # runs presos por restart → interrompidos
+    if os.getenv("CRON_ENABLED", "1").lower() not in ("0", "false", "no"):
+        from . import scheduler
+        scheduler.iniciar()
     yield
+    if os.getenv("CRON_ENABLED", "1").lower() not in ("0", "false", "no"):
+        from . import scheduler
+        scheduler.parar()
 
 
 app = FastAPI(title="TikTok Miner API", version="1.0", lifespan=lifespan)
@@ -363,30 +369,10 @@ def reverso_meta(
     if not ad:
         raise HTTPException(status_code=404, detail="anúncio não encontrado")
 
-    def _any(d: dict, *keys, default=None):
-        # a doc do endpoint de detalhe usa camelCase; o de busca usa snake_case —
-        # aceita os dois, não confia numa forma só
-        for k in keys:
-            v = d.get(k)
-            if v is not None:
-                return v
-        return default
-
     # reaproveita AdItem (mesmo normalizador do pipeline) em vez de reextrair na mão —
     # já traz o fallback de dias_ativos por start_date (total_active_time vem None na
     # prática) e o fallback de desc/cover_url por cards[] em anúncio carrossel
-    item = facebook_ad_to_item({
-        "ad_archive_id": _any(ad, "adArchiveID", "ad_archive_id", default=""),
-        "page_id": _any(ad, "pageID", "page_id", default=""),
-        "page_name": _any(ad, "pageName", "page_name", default=""),
-        "is_active": _any(ad, "isActive", "is_active"),
-        "start_date": _any(ad, "startDate", "start_date"),
-        "end_date": _any(ad, "endDate", "end_date"),
-        "total_active_time": _any(ad, "totalActiveTime", "total_active_time"),
-        "collation_count": _any(ad, "collationCount", "collation_count", default=0),
-        "publisher_platform": _any(ad, "publisherPlatform", "publisher_platform", default=[]),
-        "snapshot": ad.get("snapshot", {}) or {},
-    })
+    item = ad_details_to_item(ad)
     desc = item.desc
     cap = caption_seller_score(desc, cfg)
     digital_ok = is_digital_confirmado(desc, cfg)

@@ -11,9 +11,12 @@ import threading
 from datetime import datetime, timezone
 from typing import Optional
 
+from sqlalchemy import select
+
 from . import config
 from .db import SessionLocal
-from .models import Run
+from .email_service import get_email_service
+from .models import Run, Usuario
 from .pipeline import run_sweep, run_sweep_meta
 
 LOG = logging.getLogger("jobs")
@@ -24,6 +27,24 @@ _state = {"active": False}
 
 def is_running() -> bool:
     return _state["active"]
+
+
+def _alertar_falha(session, run_id: int, fonte: str, erro: str) -> None:
+    """Notifica todo admin ativo quando um run falha — crítico agora que o cron
+    roda sem ninguém olhando o dashboard (antes, era só o operador clicando o
+    botão e vendo o erro na hora). Hoje EmailService é NoOp (só loga) até plugar
+    um provedor de verdade — arquitetura pronta, ver app/email_service.py."""
+    svc = get_email_service()
+    admins = session.execute(
+        select(Usuario).where(Usuario.is_admin == True, Usuario.ativo == True)  # noqa: E712
+    ).scalars().all()
+    for admin in admins:
+        try:
+            svc.enviar(admin.email, "varredura_falhou", {
+                "run_id": run_id, "fonte": fonte, "erro": erro,
+            })
+        except Exception:
+            LOG.exception("alerta de falha (run %s) não pôde ser enviado pra %s", run_id, admin.email)
 
 
 def _now():
@@ -71,6 +92,7 @@ def _worker(run_id: int, live: bool, fonte: str, max_hashtags: Optional[int],
             run.error = str(e)[:1000]
             run.finished_at = _now()
             session.commit()
+            _alertar_falha(session, run_id, fonte, str(e)[:1000])
     finally:
         _state["active"] = False
         session.close()
