@@ -36,7 +36,11 @@ _FISICO = re.compile(
     # molde FÍSICO (silicone/gesso/bolo) vs molde DIGITAL (arquivo pra imprimir/cortar) —
     # "molde"/"moldes" sozinho é ambíguo; material físico de molde desambigua
     r"silicone|resina|gesso|cimento|isopor|sabonete artesanal|"
-    r"molde de silicone|forma de silicone|molde para bolo|forma de bolo)\b",
+    r"molde de silicone|forma de silicone|molde para bolo|forma de bolo|"
+    # molde INDUSTRIAL (manufatura/injeção plástica, curso técnico tipo SENAI) — 3ª
+    # acepção de "molde" achada em produção: nada a ver com molde de artesanato digital
+    r"molde inject|inje[cç][aã]o pl[aá]stica|pe[çc]a pl[aá]stica|usinagem|"
+    r"tecnologia industrial|projeto de molde)\b",
     re.IGNORECASE,
 )
 

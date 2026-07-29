@@ -467,6 +467,9 @@ meta_ads:
   max_ads_por_pagina: 2      # "não repetir": limite de anúncios da MESMA página no resultado
                               # final (dentro da mesma varredura — diferente de pular_vistos,
                               # que evita re-achar entre varreduras)
+  max_anuncios_anunciante: 20 # acima disso (ou "tem mais que 1 página"), é instituição
+                              # grande (SENAI, IBPIS...), não o vendedor pequeno que o
+                              # garimpo busca — descarta mesmo se o resto bateu certinho
   keywords:
     precificacao:
       - "Apenas R$10"

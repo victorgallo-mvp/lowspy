@@ -127,6 +127,15 @@ def test_is_fisico_dropa_molde_fisico_por_material():
     assert is_fisico("moldes digitais pra cortar em EVA, arquivo em PDF") is False
 
 
+def test_is_fisico_dropa_molde_industrial():
+    # 3ª acepção de "molde" achada em produção (run real, anúncio do SENAI): molde de
+    # manufatura/injeção plástica — nada a ver com molde de artesanato/costura digital
+    assert is_fisico("Por trás de cada peça plástica de alta qualidade existe um "
+                     "projeto de molde desenvolvido com precisão") is True
+    assert is_fisico("Domine a tecnologia industrial que dá forma à inovação") is True
+    assert is_fisico("moldes digitais pra costura, arquivo em PDF pronto pra imprimir") is False
+
+
 def test_is_high_ticket():
     assert is_high_ticket("Mentoria completa de tráfego pago", CFG) is True
     assert is_high_ticket("12x de R$97 na formação", CFG) is True

@@ -346,6 +346,30 @@ def test_run_sweep_meta_nao_repete_pagina_alem_do_limite(session):
     assert max(por_pagina.values()) <= 2
 
 
+def test_run_sweep_meta_dropa_instituicao_grande(session):
+    # anunciante com "tem_mais_ads=True" (mais anúncios do que cabe numa página) —
+    # sinal de instituição grande (SENAI, IBPIS...), não vendedor pequeno — descarta
+    # mesmo com todo o resto batendo certinho (achado real em produção)
+    from app.scrapecreators import DryRunClient
+
+    class InstituicaoGrandeClient(DryRunClient):
+        def company_ads_count(self, page_id, cfg):
+            self._spend("company_ads_count", {"pageId": page_id})
+            return 50, True  # muitos anúncios + "tem mais"
+
+    import app.pipeline as mod
+    original = mod.DryRunClient
+    mod.DryRunClient = InstituicaoGrandeClient
+    try:
+        _seed_keyword_meta(session)
+        r = run_sweep_meta(session, CFG, live=False)
+        assert r["instituicao_dropados"] >= 1
+        assert r["sobreviventes"] == 0  # os 3 que antes viravam produto foram descartados
+        assert session.query(Produto).count() == 0
+    finally:
+        mod.DryRunClient = original
+
+
 def test_run_sweep_meta_idempotente(session):
     _seed_keyword_meta(session)
     run_sweep_meta(session, CFG, live=False)

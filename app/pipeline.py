@@ -719,6 +719,8 @@ def run_sweep_meta(session, cfg: dict, live: bool, run_id: Optional[int] = None,
     longo_dropped = 0  # dias_ativos > dias_ativos_max (banda travada, pedido do operador)
     curto_dias: list[int] = []  # distribuição dos descartados (diagnóstico: threshold certo?)
     vistos_pulados = 0
+    instituicao_dropped = 0  # anunciante grande demais (SENAI, IBPIS...) — não é o
+                             # vendedor pequeno que o garimpo busca, mesmo sendo "digital"
     n0_by_id: dict[str, Any] = {}
     existing_ids = {r[0] for r in session.execute(select(Post.id)).all()}
     survivors = 0
@@ -747,6 +749,7 @@ def run_sweep_meta(session, cfg: dict, live: bool, run_id: Optional[int] = None,
             "longo_dropados": longo_dropped,
             "curto_dias_stats": curto_dias_stats,
             "vistos_pulados": vistos_pulados,
+            "instituicao_dropados": instituicao_dropped,
             "n0_posts": len(candidates) or len(n0_by_id),
             "novos": novos,
             "sobreviventes": survivors,
@@ -851,6 +854,7 @@ def run_sweep_meta(session, cfg: dict, live: bool, run_id: Optional[int] = None,
 
         survivors = 0
         novos = 0
+        max_anuncios_anunciante = m.get("max_anuncios_anunciante", 20)
         ads_count_cache: dict[str, tuple[int, bool]] = {}  # 1 chamada por página/anunciante no run
         for it in candidates:
             if survivors >= target:
@@ -862,20 +866,30 @@ def run_sweep_meta(session, cfg: dict, live: bool, run_id: Optional[int] = None,
             post = session.get(Post, it.id)
             post.processed_at = datetime.now(timezone.utc)
             if sinal != "sem_sinal":
-                # total de anúncios ativos do anunciante — só pros que viram produto
-                # (contagem "opção completa": 1 crédito extra por anunciante, deduplicado)
+                # total de anúncios ativos do anunciante — já pagávamos essa chamada só
+                # pros que viram produto; agora também decide se é instituição grande
+                # demais (contagem "opção completa": 1 crédito extra por anunciante,
+                # deduplicado por página dentro do run)
                 if it.page_id not in ads_count_cache:
                     try:
                         ads_count_cache[it.page_id] = client.company_ads_count(it.page_id, cfg)
                     except Exception as e:
                         LOG.error("Contagem de anúncios falhou p/ %s: %s", it.page_id, e)
                         ads_count_cache[it.page_id] = (None, None)
-                post.anunciante_total_ads, post.anunciante_tem_mais_ads = ads_count_cache[it.page_id]
-                upsert_produto(session, post, score_val, sinal, extract_price(it.desc),
-                               run_id, novo=it.novo)
-                survivors += 1
-                if it.novo:
-                    novos += 1
+                total_ads, tem_mais_ads = ads_count_cache[it.page_id]
+                post.anunciante_total_ads = total_ads
+                post.anunciante_tem_mais_ads = tem_mais_ads
+                # tem_mais_ads=True = mais anúncios que cabem numa página só (piso, não
+                # exato) — sinal forte de operação grande por si só, não precisa do teto
+                eh_instituicao_grande = tem_mais_ads or (total_ads and total_ads >= max_anuncios_anunciante)
+                if eh_instituicao_grande:
+                    instituicao_dropped += 1
+                else:
+                    upsert_produto(session, post, score_val, sinal, extract_price(it.desc),
+                                   run_id, novo=it.novo)
+                    survivors += 1
+                    if it.novo:
+                        novos += 1
             LOG.info("  META [%s] %s%s dias_ativos=%s score=%.1f | %s",
                      it.market, sinal, " NOVO" if it.novo else "",
                      it.dias_ativos, score_val, it.desc[:40])
