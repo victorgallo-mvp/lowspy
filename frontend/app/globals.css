@@ -449,3 +449,68 @@ body::after {
   font-family: var(--font-mono), monospace; font-size: 12px; text-transform: uppercase;
   letter-spacing: 0.08em; color: var(--ink-faint) !important;
 }
+.landingcta {
+  display: flex; gap: 12px; margin-top: 18px;
+}
+.landingcta a {
+  font-family: var(--font-mono), monospace; font-size: 13px; font-weight: 600;
+  letter-spacing: 0.05em; text-transform: uppercase; text-decoration: none;
+  padding: 11px 22px; border-radius: var(--r); transition: transform 0.12s, background 0.15s;
+}
+.landingcta a.primary { background: var(--green); color: #06210f; }
+.landingcta a.primary:hover { background: #1cb954; transform: translateY(-1px); }
+.landingcta a.secondary { border: 1px solid var(--line); color: var(--ink); }
+.landingcta a.secondary:hover { border-color: var(--green); color: var(--green-deep); }
+
+.loginlink {
+  font-family: var(--font-mono), monospace; font-size: 12px; color: var(--ink-dim);
+  text-align: center; margin-top: 4px;
+}
+.loginlink a { color: var(--green-deep); font-weight: 600; }
+
+/* ---------------- feed do assinante (/app) ---------------- */
+.feedwrap { max-width: 1100px; margin: 0 auto; padding: 28px 22px 60px; }
+.feedhead { margin-bottom: 22px; }
+.feedhead h1 {
+  font-family: var(--font-display), sans-serif; font-size: 26px; font-weight: 800;
+  color: var(--ink);
+}
+.feedsub {
+  font-family: var(--font-mono), monospace; font-size: 12.5px; color: var(--ink-dim);
+  margin-top: 4px;
+}
+.feedsub b { color: var(--green-deep); text-transform: uppercase; }
+.feedgrid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px;
+}
+.feedcard {
+  display: block; background: #fff; border: 1px solid var(--line); border-radius: var(--r);
+  overflow: hidden; text-decoration: none; color: inherit; box-shadow: var(--shadow);
+  transition: transform 0.12s, border-color 0.15s;
+}
+.feedcard:hover { transform: translateY(-2px); border-color: var(--green); }
+.feedcover { width: 100%; aspect-ratio: 3 / 4; object-fit: cover; background: var(--panel); display: block; }
+.feedcover--vazia { display: flex; }
+.feedcardbody { padding: 12px 14px 14px; display: flex; flex-direction: column; gap: 6px; }
+.feedbadge {
+  display: inline-block; align-self: flex-start; font-family: var(--font-mono), monospace;
+  font-size: 9.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-faint);
+  border: 1px solid var(--line); border-radius: 100px; padding: 2px 8px; margin-right: 4px;
+}
+.feedbadge--novo { color: var(--green-deep); border-color: var(--green); }
+.feedtitulo {
+  font-size: 13.5px; line-height: 1.4; color: var(--ink); margin-top: 2px;
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
+}
+.feedmeta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.feedpreco {
+  font-family: var(--font-mono), monospace; font-size: 13px; font-weight: 700; color: var(--green-deep);
+}
+.feednicho {
+  font-family: var(--font-mono), monospace; font-size: 10.5px; color: var(--ink-faint);
+  text-transform: uppercase;
+}
+.feedsinal {
+  font-family: var(--font-mono), monospace; font-size: 10px; color: var(--ink-dim);
+  border-top: 1px solid var(--line-soft); padding-top: 6px; margin-top: 2px;
+}

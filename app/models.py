@@ -210,6 +210,9 @@ class Usuario(Base):
     senha_hash = Column(String(100), nullable=False)
     is_admin = Column(Boolean, nullable=False, default=False)
     ativo = Column(Boolean, nullable=False, default=True)  # soft-disable (sem apagar histórico)
+    # free|pro|business — sem Stripe ainda (Fase 4), todo cadastro novo cai em "free".
+    # Vira campo real de assinatura quando o billing for ligado.
+    plano = Column(String(20), nullable=False, default="free")
     created_at = Column(DateTime, server_default=func.now())
 
 

@@ -103,6 +103,20 @@ export async function login(email: string, senha: string): Promise<Usuario> {
   return r.json();
 }
 
+export async function registrar(email: string, senha: string): Promise<Usuario> {
+  const r = await fetch(`${API_BASE}/auth/registro`, {
+    ...WITH_SESSION,
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, senha }),
+  });
+  if (!r.ok) {
+    const body = await r.json().catch(() => null);
+    throw new Error(body?.detail || `API ${r.status}`);
+  }
+  return r.json();
+}
+
 export async function logout(): Promise<void> {
   await fetch(`${API_BASE}/auth/logout`, { ...WITH_SESSION, method: "POST" });
 }
@@ -295,4 +309,30 @@ export async function apagarTermoSugerido(id: number): Promise<void> {
     headers: csrfHeader(),
   });
   if (!r.ok) throw new Error(`API ${r.status}`);
+}
+
+// --- Feed (área do assinante) -------------------------------------------------
+export type FeedProduto = {
+  post_id: string;
+  fonte: "tiktok" | "meta";
+  produto: string;
+  preco: string | null;
+  nicho: string | null;
+  url: string;
+  cover_url: string | null;
+  sinal: string;
+  novo: boolean;
+};
+
+export type FeedResp = {
+  plano: string;
+  limite: number;
+  total_pool: number;
+  produtos: FeedProduto[];
+};
+
+export async function getFeed(): Promise<FeedResp> {
+  const r = await fetch(`${API_BASE}/feed`, { ...WITH_SESSION, cache: "no-store" });
+  if (!r.ok) throw new ApiError(r.status);
+  return r.json();
 }

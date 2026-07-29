@@ -60,6 +60,7 @@ def _ensure_columns() -> None:
         ("reverso_historico", "dias_ativos", "INTEGER"),
         ("reverso_historico", "ativo", "BOOLEAN"),
         ("runs", "progress", "JSON"),
+        ("usuarios", "plano", "VARCHAR(20) DEFAULT 'free'"),
     ]
     lock_timeout_ms = 5000  # por tentativa — nunca fica preso esperando o lock pra sempre
     max_attempts = 6
