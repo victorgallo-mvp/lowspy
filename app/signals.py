@@ -50,6 +50,34 @@ def is_fisico(text: str) -> bool:
     return bool(_FISICO.search(text or ""))
 
 
+def contains_termo_negativo(text: str, termos: list[str]) -> str | None:
+    """Curadoria manual (TermoNegativo): dropa post cuja legenda bate num termo
+    cadastrado pelo operador (ex.: "especialista" pra excluir curso institucional
+    tipo SENAI). Retorna o termo que bateu (pra log/contador), ou None."""
+    low = (text or "").lower()
+    for termo in termos:
+        if termo.lower() in low:
+            return termo
+    return None
+
+
+_WHATSAPP_LINK = re.compile(r"wa\.me/|api\.whatsapp\.com|whatsapp://", re.IGNORECASE)
+
+
+def classify_cta(cta_type: str | None, link_url: str | None) -> str | None:
+    """Classifica o destino do CTA do anúncio Meta: site vs WhatsApp (só exibição
+    por enquanto, não entra no score — decisão do operador de observar antes de
+    comprometer no algoritmo)."""
+    ct = (cta_type or "").upper()
+    if ct in ("WHATSAPP_MESSAGE", "WHATSAPP_CALL", "CONTACT_WHATSAPP"):
+        return "whatsapp"
+    if link_url and _WHATSAPP_LINK.search(link_url):
+        return "whatsapp"
+    if link_url:
+        return "site"
+    return None
+
+
 # idioma: aceita pt/es/en (latino); dropa scripts não-latinos e línguas fora do escopo
 _NONLATIN = re.compile(
     r"[Ѐ-ӿ؀-ۿऀ-ॿ฀-๿"

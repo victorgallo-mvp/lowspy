@@ -17,13 +17,25 @@ from sqlalchemy import select
 
 from . import config
 from .db import SessionLocal, init_db
-from .models import CandidatoMaturacao, Comment, CostLog, Keyword, Post, Produto, Score, TermoSugerido
+from .models import (
+    CandidatoMaturacao,
+    Comment,
+    CostLog,
+    Keyword,
+    Post,
+    Produto,
+    Score,
+    TermoNegativo,
+    TermoSugerido,
+)
 from .scrapecreators import DryRunClient, LiveClient
 from .schemas import ad_details_to_item
 from .signals import (
     caption_seller_score,
+    classify_cta,
     classify_signal,
     classify_signal_meta,
+    contains_termo_negativo,
     detect_idioma,
     extract_hashtags,
     extract_price,
@@ -114,6 +126,8 @@ def upsert_post_meta(session, item, market: str) -> Post:
     post.total_active_time = item.dias_ativos
     post.collation_count = item.collation_count
     post.is_active = item.is_active
+    post.cta_link = item.cta_link
+    post.cta_tipo = classify_cta(item.cta_tipo_raw, item.cta_link)
     return post
 
 
@@ -169,6 +183,18 @@ def _registrar_maturacao(session, post_id: str, fonte: str, motivo: str) -> None
     if existente is not None:
         return  # já rastreado (ativo ou já resolvido antes) — não mexe
     session.add(CandidatoMaturacao(post_id=post_id, fonte=fonte, motivo=motivo))
+
+
+def _termos_negativos(session, fonte: str) -> list[str]:
+    """Termos ativos que excluem post (curadoria manual ou promovidos de feedback
+    negativo) — pega os específicos da fonte + os marcados 'todas'."""
+    rows = session.execute(
+        select(TermoNegativo.termo).where(
+            TermoNegativo.ativo == True,  # noqa: E712
+            TermoNegativo.fonte.in_([fonte, "todas"]),
+        )
+    ).all()
+    return [r[0] for r in rows]
 
 
 # hashtag de alcance genérico — aparece em qualquer vídeo viral, não é sinal de nicho
@@ -377,12 +403,15 @@ def run_sweep(session, cfg: dict, live: bool,
     if max_comment_fetches:  # override legado (CLI) — ainda serve pra ajustar o teto
         orcamento_total = max_comment_fetches
 
+    termos_negativos = _termos_negativos(session, "tiktok")
+
     total_seen = 0
     lang_dropped = 0
     fisico_dropped = 0
     velho_dropped = 0
     highticket_dropped = 0
     nao_digital_dropped = 0  # bateu o termo mas não confirma ser digital
+    negativo_dropped = 0  # bateu um termo negativo cadastrado (curadoria manual/feedback)
     vistos_pulados = 0
     n0_by_id: dict[str, Any] = {}  # dedup por id (mesmo post surge em várias buscas)
     watchlist_registrados: set = set()  # evita reprocessar o mesmo item em outra ordenação/página
@@ -413,7 +442,7 @@ def run_sweep(session, cfg: dict, live: bool,
 
     def _collect_termo(kw) -> None:
         nonlocal total_seen, lang_dropped, fisico_dropped, highticket_dropped
-        nonlocal nao_digital_dropped, velho_dropped, vistos_pulados
+        nonlocal nao_digital_dropped, velho_dropped, vistos_pulados, negativo_dropped
         items_this_kw = 0
         # o MESMO termo em cada ordenação (relevance/most-liked/date-posted) devolve
         # listas diferentes — oferta extra sem vocabulário novo; dedup via n0_by_id
@@ -444,6 +473,8 @@ def run_sweep(session, cfg: dict, live: bool,
                         continue
                     if is_fisico(it.desc) or is_high_ticket(it.desc, cfg):
                         continue
+                    if contains_termo_negativo(it.desc, termos_negativos):
+                        continue
                     confia_no_termo = kw.mercado == "keyword_livre"
                     if not confia_no_termo and not is_digital_confirmado(it.desc, cfg):
                         continue  # termo genérico sem confirmação — não dá pra ler comentário aqui
@@ -467,6 +498,9 @@ def run_sweep(session, cfg: dict, live: bool,
                         continue
                     if is_high_ticket(it.desc, cfg):  # queremos low-ticket
                         highticket_dropped += 1
+                        continue
+                    if contains_termo_negativo(it.desc, termos_negativos):
+                        negativo_dropped += 1
                         continue
                     # termo de mercado digital curado dispensa confirmação — o próprio
                     # termo já prova o nicho. Termo genérico (Kit/preço/palavra comum
@@ -619,6 +653,7 @@ def run_sweep(session, cfg: dict, live: bool,
             "highticket_dropados": highticket_dropped,
             "nao_digital_dropados": nao_digital_dropped,
             "velhos_dropados": velho_dropped,
+            "negativo_dropados": negativo_dropped,
             "vistos_pulados": vistos_pulados,
             "n0_posts": len(all_candidates),
             "comment_fetches": comment_fetches,
@@ -762,12 +797,15 @@ def run_sweep_meta(session, cfg: dict, live: bool, run_id: Optional[int] = None,
         select(Keyword).where(Keyword.ativo == True, Keyword.tipo == "meta_query")  # noqa: E712
     ).scalars().all()[:max_queries]
 
+    termos_negativos = _termos_negativos(session, "meta")
+
     total_seen = 0
     sem_texto_dropped = 0  # sem desc extraída: não dá pra avaliar, não "aprova por padrão"
     fisico_dropped = 0
     servico_local_dropped = 0  # clínica/procedimento estético/hotel — ruído da keyword genérica
     highticket_dropped = 0
     nao_digital_dropped = 0  # bateu a keyword (preço/"Kit") mas não confirma ser digital
+    negativo_dropped = 0  # bateu um termo negativo cadastrado (curadoria manual/feedback)
     curto_dropped = 0  # dias_ativos < dias_ativos_min
     longo_dropped = 0  # dias_ativos > dias_ativos_max (banda travada, pedido do operador)
     curto_dias: list[int] = []  # distribuição dos descartados (diagnóstico: threshold certo?)
@@ -798,6 +836,7 @@ def run_sweep_meta(session, cfg: dict, live: bool, run_id: Optional[int] = None,
             "servico_local_dropados": servico_local_dropped,
             "highticket_dropados": highticket_dropped,
             "nao_digital_dropados": nao_digital_dropped,
+            "negativo_dropados": negativo_dropped,
             "curto_dropados": curto_dropped,
             "longo_dropados": longo_dropped,
             "curto_dias_stats": curto_dias_stats,
@@ -851,6 +890,9 @@ def run_sweep_meta(session, cfg: dict, live: bool, run_id: Optional[int] = None,
                         continue
                     if not is_digital_confirmado(it.desc, cfg):  # keyword sozinha não prova nada
                         nao_digital_dropped += 1
+                        continue
+                    if contains_termo_negativo(it.desc, termos_negativos):
+                        negativo_dropped += 1
                         continue
                     # a partir daqui, já passou por TODO filtro permanente (conteúdo) —
                     # só falta motivo temporal (tempo de veiculação), que pode mudar

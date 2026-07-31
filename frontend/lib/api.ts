@@ -39,6 +39,8 @@ export type Produto = {
     ativo: boolean;
     total_anuncios_anunciante: number | null;
     tem_mais_anuncios: boolean;
+    cta_tipo: "site" | "whatsapp" | null;
+    cta_link: string | null;
   };
   score_componentes: {
     comment_score?: number;
@@ -48,6 +50,7 @@ export type Produto = {
     dias_ativos?: number;
   };
   comentarios_intencao: string[];
+  feedback: { avaliacao: "positivo" | "negativo"; comentario: string | null } | null;
 };
 
 export type ProdutosResp = { total: number; produtos: Produto[] };
@@ -304,6 +307,73 @@ export async function criarTermoSugerido(
 
 export async function apagarTermoSugerido(id: number): Promise<void> {
   const r = await fetch(`${API_BASE}/termos-sugeridos/${id}`, {
+    ...WITH_SESSION,
+    method: "DELETE",
+    headers: csrfHeader(),
+  });
+  if (!r.ok) throw new Error(`API ${r.status}`);
+}
+
+// --- Termos negativos (exclusão de post) --------------------------------------
+export type TermoNegativo = {
+  id: number;
+  termo: string;
+  fonte: "tiktok" | "meta" | "todas";
+  origem: "manual" | "feedback";
+  ativo: boolean;
+  created_at: string | null;
+};
+
+export async function getTermosNegativos(): Promise<TermoNegativo[]> {
+  return (await (await _get("/termos-negativos")).json()).termos;
+}
+
+export async function criarTermoNegativo(
+  termo: string,
+  fonte: "tiktok" | "meta" | "todas"
+): Promise<TermoNegativo> {
+  const r = await fetch(`${API_BASE}/termos-negativos`, {
+    ...WITH_SESSION,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...csrfHeader() },
+    body: JSON.stringify({ termo, fonte }),
+  });
+  if (!r.ok) {
+    const body = await r.json().catch(() => null);
+    throw new Error(body?.detail || `API ${r.status}`);
+  }
+  return r.json();
+}
+
+export async function apagarTermoNegativo(id: number): Promise<void> {
+  const r = await fetch(`${API_BASE}/termos-negativos/${id}`, {
+    ...WITH_SESSION,
+    method: "DELETE",
+    headers: csrfHeader(),
+  });
+  if (!r.ok) throw new Error(`API ${r.status}`);
+}
+
+// --- Feedback (avaliação humana de produto) -----------------------------------
+export async function enviarFeedback(
+  postId: string,
+  avaliacao: "positivo" | "negativo",
+  comentario?: string
+): Promise<void> {
+  const r = await fetch(`${API_BASE}/produtos/${postId}/feedback`, {
+    ...WITH_SESSION,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...csrfHeader() },
+    body: JSON.stringify({ avaliacao, comentario: comentario ?? "" }),
+  });
+  if (!r.ok) {
+    const body = await r.json().catch(() => null);
+    throw new Error(body?.detail || `API ${r.status}`);
+  }
+}
+
+export async function apagarFeedback(postId: string): Promise<void> {
+  const r = await fetch(`${API_BASE}/produtos/${postId}/feedback`, {
     ...WITH_SESSION,
     method: "DELETE",
     headers: csrfHeader(),

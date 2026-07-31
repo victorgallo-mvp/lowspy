@@ -1,7 +1,18 @@
 from collections import Counter
 
 from app.config import load_config
-from app.models import CandidatoMaturacao, Comment, CostLog, Keyword, Post, Produto, Run, Score, TermoSugerido
+from app.models import (
+    CandidatoMaturacao,
+    Comment,
+    CostLog,
+    Keyword,
+    Post,
+    Produto,
+    Run,
+    Score,
+    TermoNegativo,
+    TermoSugerido,
+)
 from app.pipeline import _colher_termos_vencedores, ranked_products, run_sweep, run_sweep_meta
 
 CFG = load_config()
@@ -91,6 +102,31 @@ def test_run_sweep_confia_no_termo_de_mercado_digital_curado(session):
     session.commit()
     r = run_sweep(session, CFG, live=False)
     assert r["nao_digital_dropados"] == 0
+
+
+def test_run_sweep_dropa_termo_negativo(session):
+    # item 2 da fixture ("Ebook 50 receitas fit em PDF... Hotmart") normalmente vira
+    # produto com o termo curado "planilha" (keyword_livre dispensa confirmação) —
+    # cadastrar "hotmart" como termo negativo tira ele da varredura
+    session.add(Keyword(termo="planilha", tipo="top", mercado="keyword_livre",
+                        sinal_esperado="vendedor", ativo=True))
+    session.add(TermoNegativo(termo="hotmart", fonte="tiktok", ativo=True))
+    session.commit()
+    r = run_sweep(session, CFG, live=False)
+    assert r["negativo_dropados"] >= 1
+    produtos = session.query(Produto).all()
+    posts = [session.get(Post, p.post_id) for p in produtos]
+    assert all("hotmart" not in (p.descricao or "").lower() for p in posts)
+
+
+def test_run_sweep_ignora_termo_negativo_inativo(session):
+    # termo desativado não filtra mais nada — o operador "desligou" a regra
+    session.add(Keyword(termo="planilha", tipo="top", mercado="keyword_livre",
+                        sinal_esperado="vendedor", ativo=True))
+    session.add(TermoNegativo(termo="hotmart", fonte="tiktok", ativo=False))
+    session.commit()
+    r = run_sweep(session, CFG, live=False)
+    assert r["negativo_dropados"] == 0
 
 
 def test_run_sweep_prioriza_termos_da_lista_prioridade(session):
@@ -325,6 +361,17 @@ def test_run_sweep_meta_usa_dias_ativos_como_demanda(session):
     assert all(10 <= post.total_active_time <= 25 for post in posts.values())
 
 
+def test_run_sweep_meta_persiste_cta(session):
+    # fixture: todo link_url é checkout de site (nenhum wa.me) -> classifica "site"
+    _seed_keyword_meta(session)
+    run_sweep_meta(session, CFG, live=False)
+    produtos = session.query(Produto).filter(Produto.mercado.like("meta_%")).all()
+    posts = [session.get(Post, p.post_id) for p in produtos]
+    assert posts
+    assert all(post.cta_tipo == "site" for post in posts)
+    assert all(post.cta_link and post.cta_link.startswith("https://") for post in posts)
+
+
 def test_run_sweep_meta_conta_anuncios_do_anunciante(session):
     _seed_keyword_meta(session)
     r = run_sweep_meta(session, CFG, live=False)
@@ -368,6 +415,30 @@ def test_run_sweep_meta_dropa_instituicao_grande(session):
         assert session.query(Produto).count() == 0
     finally:
         mod.DryRunClient = original
+
+
+def test_run_sweep_meta_dropa_termo_negativo(session):
+    # item 8 ("Apostila digital completa em PDF, download imediato") é 1 dos 3
+    # sobreviventes normais — "apostila" como termo negativo tira ele da varredura
+    _seed_keyword_meta(session)
+    session.add(TermoNegativo(termo="apostila", fonte="meta", ativo=True))
+    session.commit()
+    r = run_sweep_meta(session, CFG, live=False)
+    assert r["negativo_dropados"] >= 1
+    assert r["sobreviventes"] == 2
+    produtos = session.query(Produto).filter(Produto.mercado.like("meta_%")).all()
+    posts = [session.get(Post, p.post_id) for p in produtos]
+    assert all("apostila" not in (p.descricao or "").lower() for p in posts)
+
+
+def test_run_sweep_meta_termo_negativo_fonte_tiktok_nao_afeta_meta(session):
+    # fonte específica: termo cadastrado só pro tiktok não deve filtrar nada no meta
+    _seed_keyword_meta(session)
+    session.add(TermoNegativo(termo="apostila", fonte="tiktok", ativo=True))
+    session.commit()
+    r = run_sweep_meta(session, CFG, live=False)
+    assert r["negativo_dropados"] == 0
+    assert r["sobreviventes"] == 3
 
 
 def test_run_sweep_meta_idempotente(session):

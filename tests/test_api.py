@@ -146,6 +146,49 @@ def test_termos_sugeridos_exige_termo_e_valida_fonte(session):
     assert r.status_code == 200 and r.json()["fonte"] == "geral"
 
 
+def test_termos_negativos_cria_lista_e_apaga(session):
+    c = _admin_client(session)
+    r = c.post("/termos-negativos", json={"termo": "especialista", "fonte": "meta"})
+    assert r.status_code == 200
+    body = r.json()
+    tid = body["id"]
+    assert body["origem"] == "manual"
+    assert body["ativo"] is True
+
+    lst = c.get("/termos-negativos").json()["termos"]
+    assert any(t["id"] == tid and t["termo"] == "especialista" for t in lst)
+
+    assert c.delete(f"/termos-negativos/{tid}").status_code == 200
+    lst2 = c.get("/termos-negativos").json()["termos"]
+    assert not any(t["id"] == tid for t in lst2)
+
+
+def test_termos_negativos_exige_termo_e_valida_fonte(session):
+    c = _admin_client(session)
+    assert c.post("/termos-negativos", json={"termo": "  "}).status_code == 400
+    assert c.post("/termos-negativos", json={"termo": "x", "fonte": "invalida"}).status_code == 400
+    # sem "fonte" cai no default "todas"
+    r = c.post("/termos-negativos", json={"termo": "professor doutor"})
+    assert r.status_code == 200 and r.json()["fonte"] == "todas"
+
+
+def test_termos_negativos_reenviar_reativa_em_vez_de_duplicar(session):
+    from app.models import TermoNegativo
+
+    c = _admin_client(session)
+    tid = c.post("/termos-negativos", json={"termo": "especialista", "fonte": "meta"}).json()["id"]
+    session.execute(
+        TermoNegativo.__table__.update().where(TermoNegativo.id == tid).values(ativo=False)
+    )
+    session.commit()
+    # cadastrar o mesmo termo+fonte de novo reativa em vez de duplicar (unique termo+fonte)
+    r = c.post("/termos-negativos", json={"termo": "especialista", "fonte": "meta"})
+    assert r.status_code == 200
+    assert r.json()["id"] == tid
+    assert r.json()["ativo"] is True
+    assert len(c.get("/termos-negativos").json()["termos"]) == 1
+
+
 def test_listar_produtos_ordena_por_views(session):
     _seed_and_sweep(session)
     c = _admin_client(session)
@@ -194,6 +237,57 @@ def test_detalhe_404(session):
     _seed_and_sweep(session)
     c = _admin_client(session)
     assert c.get("/produtos/nao_existe").status_code == 404
+
+
+def test_feedback_cria_atualiza_e_aparece_em_produtos(session):
+    _seed_and_sweep(session)
+    c = _admin_client(session)
+    post_id = c.get("/produtos").json()["produtos"][0]["post_id"]
+
+    r = c.post(f"/produtos/{post_id}/feedback",
+              json={"avaliacao": "negativo", "comentario": "curso com especialista"})
+    assert r.status_code == 200
+    assert r.json() == {"post_id": post_id, "avaliacao": "negativo",
+                        "comentario": "curso com especialista"}
+
+    # aparece embutido na listagem (voto do admin logado)
+    item = next(p for p in c.get("/produtos").json()["produtos"] if p["post_id"] == post_id)
+    assert item["feedback"] == {"avaliacao": "negativo", "comentario": "curso com especialista"}
+    # e no detalhe
+    assert c.get(f"/produtos/{post_id}").json()["feedback"]["avaliacao"] == "negativo"
+
+    # reenviar pro mesmo post ATUALIZA o voto, não duplica
+    r2 = c.post(f"/produtos/{post_id}/feedback", json={"avaliacao": "positivo"})
+    assert r2.status_code == 200
+    assert r2.json()["avaliacao"] == "positivo"
+    assert r2.json()["comentario"] is None
+    from app.models import Feedback
+    assert session.query(Feedback).filter_by(post_id=post_id).count() == 1
+
+
+def test_feedback_valida_avaliacao_e_produto_existente(session):
+    _seed_and_sweep(session)
+    c = _admin_client(session)
+    post_id = c.get("/produtos").json()["produtos"][0]["post_id"]
+    assert c.post(f"/produtos/{post_id}/feedback", json={"avaliacao": "meh"}).status_code == 400
+    assert c.post("/produtos/nao_existe/feedback", json={"avaliacao": "positivo"}).status_code == 404
+
+
+def test_feedback_apagar_remove_voto(session):
+    _seed_and_sweep(session)
+    c = _admin_client(session)
+    post_id = c.get("/produtos").json()["produtos"][0]["post_id"]
+    c.post(f"/produtos/{post_id}/feedback", json={"avaliacao": "positivo"})
+    assert c.delete(f"/produtos/{post_id}/feedback").status_code == 200
+    item = next(p for p in c.get("/produtos").json()["produtos"] if p["post_id"] == post_id)
+    assert item["feedback"] is None
+
+
+def test_feedback_exige_login_admin(session):
+    _seed_and_sweep(session)
+    # anônimo (sem cookie/header CSRF) barra em 403 antes mesmo do require_admin
+    r = client.post("/produtos/x/feedback", json={"avaliacao": "positivo"})
+    assert r.status_code == 403
 
 
 def test_custo_dia(session):

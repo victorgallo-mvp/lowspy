@@ -8,19 +8,25 @@ import {
   ProdutosResp,
   Reverso,
   RunSnapshot,
+  TermoNegativo,
   TermoSugerido,
   TriggerError,
   Varredura,
   analisarLinkMeta,
   analisarLinkTiktok,
+  apagarFeedback,
   apagarReversoHistorico,
+  apagarTermoNegativo,
   apagarTermoSugerido,
+  criarTermoNegativo,
   criarTermoSugerido,
+  enviarFeedback,
   getCusto,
   getLatestRun,
   getProdutos,
   getReversoHistorico,
   getRun,
+  getTermosNegativos,
   getTermosSugeridos,
   getVarreduras,
   triggerSweep,
@@ -92,6 +98,11 @@ function Row({ p, i }: { p: Produto; i: number }) {
           {p.novo && <span className="badge novo">novo</span>}
           {p.idioma === "es_en" && <span className="badge mkt">ES/EN</span>}
           {isMeta && p.meta?.pagina && <span className="badge mkt">{p.meta.pagina}</span>}
+          {isMeta && p.meta?.cta_tipo && (
+            <span className={`badge cta ${p.meta.cta_tipo}`}>
+              {p.meta.cta_tipo === "whatsapp" ? "💬 whatsapp" : "🌐 site"}
+            </span>
+          )}
           {!isMeta && p.nicho && <span className="badge mkt">{p.nicho}</span>}
           {p.termo_origem && <span className="badge termo" title="achado buscando por">#{p.termo_origem}</span>}
           {p.preco && (
@@ -167,8 +178,90 @@ function Row({ p, i }: { p: Produto; i: number }) {
         <a className="linkout" href={p.url} target="_blank" rel="noreferrer">
           {isMeta ? "abrir no ad library ↗" : "abrir no tiktok ↗"}
         </a>
+        <FeedbackWidget p={p} />
       </div>
     </article>
+  );
+}
+
+function FeedbackWidget({ p }: { p: Produto }) {
+  const [avaliacao, setAvaliacao] = useState(p.feedback?.avaliacao ?? null);
+  const [comentario, setComentario] = useState(p.feedback?.comentario ?? "");
+  const [showComment, setShowComment] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  const votar = async (v: "positivo" | "negativo") => {
+    if (saving) return;
+    const novo = avaliacao === v ? null : v; // clicar de novo no mesmo voto desmarca
+    setSaving(true);
+    try {
+      if (novo === null) {
+        await apagarFeedback(p.post_id);
+      } else {
+        await enviarFeedback(p.post_id, novo, comentario);
+      }
+      setAvaliacao(novo);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const salvarComentario = async () => {
+    if (!avaliacao || saving) return;
+    setSaving(true);
+    try {
+      await enviarFeedback(p.post_id, avaliacao, comentario);
+      setShowComment(false);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="feedback">
+      <div className="fbrow">
+        <button
+          className={`fbbtn ${avaliacao === "positivo" ? "active pos" : ""}`}
+          onClick={() => votar("positivo")}
+          disabled={saving}
+          title="bom produto"
+        >
+          👍
+        </button>
+        <button
+          className={`fbbtn ${avaliacao === "negativo" ? "active neg" : ""}`}
+          onClick={() => votar("negativo")}
+          disabled={saving}
+          title="produto ruim / falso positivo (ex: curso institucional)"
+        >
+          👎
+        </button>
+        <button
+          className={`fbbtn ${comentario ? "hascomment" : ""}`}
+          onClick={() => setShowComment((v) => !v)}
+          title="comentário"
+        >
+          💬
+        </button>
+      </div>
+      {showComment && (
+        <div className="fbcommentbox">
+          <textarea
+            value={comentario}
+            onChange={(e) => setComentario(e.target.value)}
+            placeholder="por que? (ex: curso com especialista, não é produto)"
+            rows={2}
+          />
+          <button className="fbsave" onClick={salvarComentario} disabled={saving || !avaliacao}>
+            salvar
+          </button>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -473,6 +566,9 @@ export default function Dashboard() {
         <ReversoSection />
         <TermosSugeridosSection />
       </div>
+      <div className="reversorow single">
+        <TermosNegativosSection />
+      </div>
     </main>
   );
 }
@@ -732,6 +828,91 @@ function TermosSugeridosSection() {
               </span>
               <span className="termotexto">{t.termo}</span>
               {t.nota && <span className="termonota">— {t.nota}</span>}
+              <button className="termodel" onClick={() => remover(t.id)} title="remover">✕</button>
+            </div>
+          ))
+        )}
+      </div>
+    </section>
+  );
+}
+
+function TermosNegativosSection() {
+  const [termo, setTermo] = useState("");
+  const [fonte, setFonte] = useState<"tiktok" | "meta" | "todas">("todas");
+  const [lista, setLista] = useState<TermoNegativo[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const carregar = useCallback(() => {
+    getTermosNegativos().then(setLista).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    carregar();
+  }, [carregar]);
+
+  const adicionar = useCallback(async () => {
+    if (!termo.trim() || loading) return;
+    setLoading(true);
+    setErr(null);
+    try {
+      await criarTermoNegativo(termo.trim(), fonte);
+      setTermo("");
+      carregar();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "falha ao salvar");
+    } finally {
+      setLoading(false);
+    }
+  }, [termo, fonte, loading, carregar]);
+
+  const remover = useCallback(async (id: number) => {
+    setLista((v) => v.filter((t) => t.id !== id));  // otimista
+    try {
+      await apagarTermoNegativo(id);
+    } catch {
+      carregar();  // desfaz se falhar
+    }
+  }, [carregar]);
+
+  return (
+    <section className="reverso termos">
+      <h2>palavras negativas</h2>
+      <p className="reversotag">
+        legenda que bate num desses termos é excluída das próximas varreduras (ex:
+        &quot;especialista&quot; pra tirar curso institucional tipo SENAI). Não apaga produto já
+        aprovado — só filtra daqui pra frente.
+      </p>
+      <div className="reversoform termosform">
+        <input
+          type="text"
+          placeholder="ex: especialista"
+          value={termo}
+          onChange={(e) => setTermo(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && adicionar()}
+        />
+        <select value={fonte} onChange={(e) => setFonte(e.target.value as typeof fonte)}>
+          <option value="todas">todas</option>
+          <option value="tiktok">tiktok</option>
+          <option value="meta">meta</option>
+        </select>
+        <button className="btn" onClick={adicionar} disabled={loading || !termo.trim()}>
+          {loading ? "…" : "+ adicionar"}
+        </button>
+      </div>
+      {err && <div className="state err">erro: {err}</div>}
+      <div className="termoslist">
+        {lista.length === 0 ? (
+          <span className="rempty">nenhuma palavra negativa cadastrada</span>
+        ) : (
+          lista.map((t) => (
+            <div className="termoitem" key={t.id}>
+              <span className={`badge src ${t.fonte === "meta" ? "meta" : t.fonte === "tiktok" ? "tiktok" : ""}`}>
+                {t.fonte}
+              </span>
+              <span className="termotexto">{t.termo}</span>
+              {t.origem === "feedback" && <span className="termonota">— veio de feedback</span>}
               <button className="termodel" onClick={() => remover(t.id)} title="remover">✕</button>
             </div>
           ))

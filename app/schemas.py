@@ -124,6 +124,8 @@ class AdSnapshot(BaseModel):
     body: AdSnapshotBody = Field(default_factory=AdSnapshotBody)
     title: str = ""  # separado do body — anúncio pode confirmar "é digital" só no título
     link_url: Optional[str] = None
+    cta_type: Optional[str] = None  # endpoint de busca: enum tipo "SHOP_NOW", "WHATSAPP_MESSAGE"
+    cta_text: Optional[str] = None  # endpoint de detalhe: rótulo tipo "Comprar agora"
     videos: list = Field(default_factory=list)
     images: list = Field(default_factory=list)
     cards: list = Field(default_factory=list)  # anúncio carrossel: mídia fica aqui, não em images/videos
@@ -172,6 +174,15 @@ class AdItem(BaseModel):
     @property
     def url(self) -> str:
         return f"https://www.facebook.com/ads/library/?id={self.ad_archive_id}" if self.ad_archive_id else ""
+
+    @property
+    def cta_link(self) -> Optional[str]:
+        return self.snapshot.link_url
+
+    @property
+    def cta_tipo_raw(self) -> Optional[str]:
+        """cta_type (endpoint de busca) ou cta_text (endpoint de detalhe) — o que vier."""
+        return self.snapshot.cta_type or self.snapshot.cta_text
 
     @property
     def dias_ativos(self) -> int:

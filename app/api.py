@@ -19,7 +19,18 @@ from sqlalchemy import func, select
 from . import config, jobs
 from .auth import CSRF_COOKIE_NAME, CSRF_HEADER_NAME, require_admin, verificar_csrf
 from .db import SessionLocal, get_db, init_db
-from .models import CostLog, Post, Produto, ReversoHistorico, Run, Score, TermoSugerido, Usuario
+from .models import (
+    CostLog,
+    Feedback,
+    Post,
+    Produto,
+    ReversoHistorico,
+    Run,
+    Score,
+    TermoNegativo,
+    TermoSugerido,
+    Usuario,
+)
 from .pipeline import DBCost
 from .scrapecreators import DryRunClient, LiveClient
 from .schemas import ad_details_to_item
@@ -119,6 +130,8 @@ def _serialize(pr: Produto, post: Post, sc: Score) -> dict:
             "ativo": bool(post.is_active),
             "total_anuncios_anunciante": post.anunciante_total_ads,
             "tem_mais_anuncios": bool(post.anunciante_tem_mais_ads),
+            "cta_tipo": post.cta_tipo,
+            "cta_link": post.cta_link,
         }
         base["score_componentes"] = {
             "caption_score": sc.caption_score,
@@ -140,6 +153,7 @@ def _serialize(pr: Produto, post: Post, sc: Score) -> dict:
         }
         # LGPD: só o texto do comentário, sem nick/uid.
         base["comentarios_intencao"] = [c.texto for c in post.comentarios if c.is_intent][:8]
+    base["feedback"] = None  # preenchido depois com o voto do admin logado, se existir
     return base
 
 
@@ -215,7 +229,23 @@ def listar_produtos(
             m = re.search(r"\d+[.,]?\d*", p or "")
             return float(m.group(0).replace(",", ".")) if m else None
         itens = [i for i in itens if (_num(i["preco"]) or 0) <= preco_max]
+    _anexar_feedback(db, itens, _admin.id)
     return {"total": len(itens), "produtos": itens}
+
+
+def _anexar_feedback(db, itens: list[dict], usuario_id: int) -> None:
+    """Preenche item['feedback'] com o voto do admin logado nesse post, se existir."""
+    post_ids = [i["post_id"] for i in itens]
+    if not post_ids:
+        return
+    fb_rows = db.execute(
+        select(Feedback).where(Feedback.post_id.in_(post_ids), Feedback.usuario_id == usuario_id)
+    ).scalars().all()
+    fb_by_post = {f.post_id: f for f in fb_rows}
+    for i in itens:
+        f = fb_by_post.get(i["post_id"])
+        if f:
+            i["feedback"] = {"avaliacao": f.avaliacao, "comentario": f.comentario}
 
 
 @app.get("/produtos/{post_id}")
@@ -228,7 +258,41 @@ def detalhe_produto(post_id: str, db=Depends(get_db), _admin: Usuario = Depends(
     ).first()
     if not row:
         raise HTTPException(status_code=404, detail="produto não encontrado")
-    return _serialize(*row)
+    item = _serialize(*row)
+    _anexar_feedback(db, [item], _admin.id)
+    return item
+
+
+@app.post("/produtos/{post_id}/feedback")
+def enviar_feedback(post_id: str, payload: dict, db=Depends(get_db),
+                    _admin: Usuario = Depends(require_admin)):
+    if not db.get(Post, post_id):
+        raise HTTPException(status_code=404, detail="produto não encontrado")
+    avaliacao = (payload.get("avaliacao") or "").strip()
+    if avaliacao not in ("positivo", "negativo"):
+        raise HTTPException(status_code=400, detail="avaliacao inválida (positivo|negativo)")
+    comentario = (payload.get("comentario") or "").strip() or None
+    fb = db.execute(
+        select(Feedback).where(Feedback.post_id == post_id, Feedback.usuario_id == _admin.id)
+    ).scalar_one_or_none()
+    if fb is None:
+        fb = Feedback(post_id=post_id, usuario_id=_admin.id)
+        db.add(fb)
+    fb.avaliacao = avaliacao
+    fb.comentario = comentario
+    db.commit()
+    return {"post_id": post_id, "avaliacao": fb.avaliacao, "comentario": fb.comentario}
+
+
+@app.delete("/produtos/{post_id}/feedback")
+def apagar_feedback(post_id: str, db=Depends(get_db), _admin: Usuario = Depends(require_admin)):
+    fb = db.execute(
+        select(Feedback).where(Feedback.post_id == post_id, Feedback.usuario_id == _admin.id)
+    ).scalar_one_or_none()
+    if fb:
+        db.delete(fb)
+        db.commit()
+    return {"ok": True}
 
 
 @app.get("/custo/dia")
@@ -507,6 +571,59 @@ def listar_termos_sugeridos(db=Depends(get_db), _admin: Usuario = Depends(requir
 @app.delete("/termos-sugeridos/{termo_id}")
 def apagar_termo_sugerido(termo_id: int, db=Depends(get_db), _admin: Usuario = Depends(require_admin)):
     t = db.get(TermoSugerido, termo_id)
+    if not t:
+        raise HTTPException(status_code=404, detail="termo não encontrado")
+    db.delete(t)
+    db.commit()
+    return {"ok": True}
+
+
+# --------------------------------------------------------------------------- #
+# Termos negativos: palavra que EXCLUI post da varredura (curadoria manual ou
+# promovida de feedback negativo). Some das próximas varreduras (não apaga
+# produto já aprovado — histórico fica pra treinar/validar depois).
+# --------------------------------------------------------------------------- #
+def _termo_negativo_dict(t: TermoNegativo) -> dict:
+    return {
+        "id": t.id, "termo": t.termo, "fonte": t.fonte, "origem": t.origem,
+        "ativo": bool(t.ativo),
+        "created_at": t.created_at.isoformat() if t.created_at else None,
+    }
+
+
+@app.post("/termos-negativos")
+def criar_termo_negativo(payload: dict, db=Depends(get_db), _admin: Usuario = Depends(require_admin)):
+    termo = (payload.get("termo") or "").strip()
+    if not termo:
+        raise HTTPException(status_code=400, detail="termo obrigatório")
+    fonte = (payload.get("fonte") or "todas").strip()
+    if fonte not in ("tiktok", "meta", "todas"):
+        raise HTTPException(status_code=400, detail="fonte inválida (tiktok|meta|todas)")
+    existente = db.execute(
+        select(TermoNegativo).where(TermoNegativo.termo == termo, TermoNegativo.fonte == fonte)
+    ).scalar_one_or_none()
+    if existente:
+        existente.ativo = True
+        db.commit()
+        return _termo_negativo_dict(existente)
+    t = TermoNegativo(termo=termo, fonte=fonte, origem=(payload.get("origem") or "manual").strip())
+    db.add(t)
+    db.commit()
+    return _termo_negativo_dict(t)
+
+
+@app.get("/termos-negativos")
+def listar_termos_negativos(db=Depends(get_db), _admin: Usuario = Depends(require_admin),
+                            limit: int = Query(200, ge=1, le=1000)):
+    rows = db.execute(
+        select(TermoNegativo).order_by(TermoNegativo.id.desc()).limit(limit)
+    ).scalars().all()
+    return {"termos": [_termo_negativo_dict(t) for t in rows]}
+
+
+@app.delete("/termos-negativos/{termo_id}")
+def apagar_termo_negativo(termo_id: int, db=Depends(get_db), _admin: Usuario = Depends(require_admin)):
+    t = db.get(TermoNegativo, termo_id)
     if not t:
         raise HTTPException(status_code=404, detail="termo não encontrado")
     db.delete(t)

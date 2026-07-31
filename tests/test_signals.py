@@ -2,8 +2,10 @@ from app.config import load_config
 from app.schemas import SearchItem, SearchStats
 from app.signals import (
     caption_seller_score,
+    classify_cta,
     classify_signal,
     classify_signal_meta,
+    contains_termo_negativo,
     detect_idioma,
     engagement_norm,
     extract_hashtags,
@@ -204,3 +206,23 @@ def test_classify_signal_meta():
     assert classify_signal_meta(20, cap_zero, CFG) == "anuncio_confirmado"  # >=15 dias
     assert classify_signal_meta(5, {"score": 1.5}, CFG) == "vendedor_off_platform"  # curto mas c/ CTA
     assert classify_signal_meta(5, cap_zero, CFG) == "sem_sinal"
+
+
+def test_contains_termo_negativo():
+    # caso concreto (SENAI): curso com especialista/instrutor não é produto info
+    assert contains_termo_negativo(
+        "Curso com especialista certificado, aulas com professor doutor", ["especialista"]
+    ) == "especialista"
+    assert contains_termo_negativo("apostila digital em PDF", ["especialista"]) is None
+    assert contains_termo_negativo("qualquer coisa", []) is None
+    # case-insensitive
+    assert contains_termo_negativo("Fale com nosso ESPECIALISTA", ["especialista"]) == "especialista"
+
+
+def test_classify_cta():
+    assert classify_cta("WHATSAPP_MESSAGE", None) == "whatsapp"
+    assert classify_cta("SHOP_NOW", "https://wa.me/5511999999999") == "whatsapp"
+    assert classify_cta(None, "https://api.whatsapp.com/send?phone=123") == "whatsapp"
+    assert classify_cta("SHOP_NOW", "https://minhaloja.com/checkout") == "site"
+    assert classify_cta("LEARN_MORE", "https://exemplo.com") == "site"
+    assert classify_cta(None, None) is None

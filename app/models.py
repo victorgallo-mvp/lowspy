@@ -63,6 +63,10 @@ class Post(Base):
     is_active = Column(Boolean, nullable=True)           # meta: anúncio ainda ativo?
     anunciante_total_ads = Column(Integer, nullable=True)      # meta: total de anúncios ativos da página
     anunciante_tem_mais_ads = Column(Boolean, nullable=True)   # meta: contagem é piso, não exata
+    cta_link = Column(Text, nullable=True)   # meta: snapshot.link_url (destino do CTA)
+    # meta: "site" | "whatsapp" | "indefinido" — classificado a partir de cta_type/link_url,
+    # só exibição por enquanto (não entra no score)
+    cta_tipo = Column(String(16), nullable=True)
     first_seen = Column(DateTime, server_default=func.now())
     last_seen = Column(DateTime, server_default=func.now(), onupdate=func.now())
     processed_at = Column(DateTime, nullable=True)  # N1 concluído (dedup de fetch)
@@ -214,6 +218,40 @@ class Usuario(Base):
     # Vira campo real de assinatura quando o billing for ligado.
     plano = Column(String(20), nullable=False, default="free")
     created_at = Column(DateTime, server_default=func.now())
+
+
+class TermoNegativo(Base):
+    """Termo que EXCLUI um post da varredura (o inverso de Keyword). Nasce manual
+    (operador cadastra direto) ou a partir de um feedback negativo com comentário
+    (ex.: "curso com especialista" -> vira termo pra dropar esse padrão nos próximos
+    runs). Não apaga produtos já aprovados — só filtra daqui pra frente."""
+
+    __tablename__ = "termos_negativos"
+    __table_args__ = (UniqueConstraint("termo", "fonte", name="uq_termo_negativo_termo_fonte"),)
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    termo = Column(String(200), nullable=False)
+    fonte = Column(String(10), nullable=False, default="todas")  # tiktok | meta | todas
+    origem = Column(String(20), nullable=False, default="manual")  # manual | feedback
+    ativo = Column(Boolean, nullable=False, default=True)
+    created_at = Column(DateTime, server_default=func.now())
+
+
+class Feedback(Base):
+    """Avaliação humana (👍/👎 + comentário livre) de um produto minerado, dada por
+    um admin. Um voto por (post, usuário) — reavaliar atualiza o próprio voto, não
+    duplica. Alimenta a curadoria: comentário negativo vira candidato a TermoNegativo."""
+
+    __tablename__ = "feedback"
+    __table_args__ = (UniqueConstraint("post_id", "usuario_id", name="uq_feedback_post_usuario"),)
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    post_id = Column(String(40), ForeignKey("posts.id"), nullable=False, index=True)
+    usuario_id = Column(Integer, ForeignKey("usuarios.id"), nullable=False)
+    avaliacao = Column(String(10), nullable=False)  # positivo | negativo
+    comentario = Column(Text, nullable=True)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
 
 class CandidatoMaturacao(Base):
