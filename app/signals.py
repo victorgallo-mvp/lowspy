@@ -130,9 +130,13 @@ def extract_hashtags(text: str) -> list[str]:
 
 
 def passes_level0_abs(item: SearchItem, cfg: dict) -> bool:
+    """OR, não AND: vídeo pode ter curtida de sobra e pouco comentário (ou o
+    contrário) e ainda ser um candidato válido — exigir os dois ao mesmo tempo
+    matava vídeo popular só porque um dos dois números demorou a crescer
+    (achado real: maturação ficou 3 rodadas seguidas resgatando ZERO com o AND)."""
     t = cfg["thresholds"]
     st = item.statistics
-    return st.comment_count >= t["abs_min_comments"] and st.digg_count >= t["abs_min_likes"]
+    return st.comment_count >= t["abs_min_comments"] or st.digg_count >= t["abs_min_likes"]
 
 
 def select_level0_relative(items: list[SearchItem], cfg: dict) -> list[SearchItem]:

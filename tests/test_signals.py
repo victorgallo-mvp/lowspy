@@ -20,6 +20,7 @@ from app.signals import (
     meta_ativo_norm,
     meta_final_score,
     normalize_score,
+    passes_level0_abs,
     select_level0_relative,
 )
 
@@ -112,6 +113,18 @@ def test_intent_score_so_conta_quero_em_comentario_seco():
     # sinal forte (checkout/venda) vale mesmo em comentário longo
     r_forte = intent_score(["gente comprei ontem pela hotmart e chegou na hora, super recomendo"], "l", CFG)
     assert r_forte["n_comentarios_intencao"] == 1
+
+
+def test_passes_level0_abs_e_or_nao_and():
+    # OR, não AND (mudança 08/2026): vídeo pode ter curtida de sobra e pouco
+    # comentário (ou o contrário) e ainda ser candidato válido — exigir os dois
+    # ao mesmo tempo matava vídeo popular só porque um dos números demorou a
+    # crescer (achado real: maturação ficou 3 rodadas seguidas resgatando ZERO)
+    t = {"abs_min_comments": 30, "abs_min_likes": 10}
+    cfg = {"thresholds": t}
+    assert passes_level0_abs(_item(comments=5000, likes=2), cfg) is True  # só comentário
+    assert passes_level0_abs(_item(comments=2, likes=5000), cfg) is True  # só curtida
+    assert passes_level0_abs(_item(comments=2, likes=2), cfg) is False  # nenhum dos dois
 
 
 def test_select_level0_relative_preserves_niche():

@@ -1,4 +1,5 @@
 from collections import Counter
+from datetime import datetime, timedelta
 
 from app.config import load_config
 from app.models import (
@@ -13,7 +14,14 @@ from app.models import (
     TermoNegativo,
     TermoSugerido,
 )
-from app.pipeline import _colher_termos_vencedores, ranked_products, run_sweep, run_sweep_meta
+from app.pipeline import (
+    _colher_termos_vencedores,
+    _reavaliar_maturacao_meta,
+    _reavaliar_maturacao_tiktok,
+    ranked_products,
+    run_sweep,
+    run_sweep_meta,
+)
 
 CFG = load_config()
 
@@ -236,6 +244,56 @@ def test_run_sweep_maturacao_esgota_tentativas(session):
         assert cm.ativo is False  # desistiu — não reavalia mais (perdido, tradeoff aceito)
     finally:
         mod.DryRunClient = original
+
+
+def test_reavaliar_maturacao_tiktok_prioriza_mais_antigo(session):
+    # orcamento_extra=1 dá pra reavaliar só 1 dos 2 candidatos — tem que ser o
+    # mais antigo (achado real: fila de 898 quase parada por falta de ordenação)
+    from app.scrapecreators import DryRunClient
+
+    session.add(Post(id="antigo", fonte="tiktok", url="https://x.test/antigo", descricao="a"))
+    session.add(Post(id="novo", fonte="tiktok", url="https://x.test/novo", descricao="b"))
+    session.commit()
+    session.add(CandidatoMaturacao(post_id="antigo", fonte="tiktok", motivo="comentarios_insuficientes",
+                                   primeira_vez_visto=datetime.utcnow() - timedelta(days=5)))
+    session.add(CandidatoMaturacao(post_id="novo", fonte="tiktok", motivo="comentarios_insuficientes",
+                                   primeira_vez_visto=datetime.utcnow()))
+    session.commit()
+
+    import copy
+    cfg = copy.deepcopy(CFG)
+    cfg["discovery"]["maturacao"]["orcamento_extra"] = 1
+    client = DryRunClient(lambda *a, **k: None)
+    _reavaliar_maturacao_tiktok(session, client, cfg, run_id=None)
+
+    cm_antigo = session.query(CandidatoMaturacao).filter_by(post_id="antigo").one()
+    cm_novo = session.query(CandidatoMaturacao).filter_by(post_id="novo").one()
+    assert cm_antigo.tentativas == 1  # o mais antigo foi o único processado
+    assert cm_novo.tentativas == 0
+
+
+def test_reavaliar_maturacao_meta_prioriza_mais_antigo(session):
+    from app.scrapecreators import DryRunClient
+
+    session.add(Post(id="antigo", fonte="meta", url="https://x.test/antigo", descricao="a"))
+    session.add(Post(id="novo", fonte="meta", url="https://x.test/novo", descricao="b"))
+    session.commit()
+    session.add(CandidatoMaturacao(post_id="antigo", fonte="meta", motivo="dias_ativos_curto",
+                                   primeira_vez_visto=datetime.utcnow() - timedelta(days=5)))
+    session.add(CandidatoMaturacao(post_id="novo", fonte="meta", motivo="dias_ativos_curto",
+                                   primeira_vez_visto=datetime.utcnow()))
+    session.commit()
+
+    import copy
+    cfg = copy.deepcopy(CFG)
+    cfg["discovery"]["maturacao"]["orcamento_extra"] = 1
+    client = DryRunClient(lambda *a, **k: None)
+    _reavaliar_maturacao_meta(session, client, cfg, run_id=None)
+
+    cm_antigo = session.query(CandidatoMaturacao).filter_by(post_id="antigo").one()
+    cm_novo = session.query(CandidatoMaturacao).filter_by(post_id="novo").one()
+    assert cm_antigo.tentativas == 1
+    assert cm_novo.tentativas == 0
 
 
 def test_run_sweep_usa_search_top_para_keyword_livre(session):

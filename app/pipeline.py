@@ -266,7 +266,10 @@ def _reavaliar_maturacao_tiktok(session, client, cfg: dict, run_id: Optional[int
             CandidatoMaturacao.fonte == "tiktok",
             CandidatoMaturacao.ativo == True,  # noqa: E712
             CandidatoMaturacao.tentativas < max_tentativas,
-        )
+        ).order_by(CandidatoMaturacao.primeira_vez_visto.asc())
+        # mais antigo primeiro: sem isso o orçamento por rodada (orcamento_extra)
+        # não garante cobertura justa da fila — pode bater sempre nos mesmos por
+        # ordem arbitrária do banco (achado real: fila de 898 quase intocada)
     ).scalars().all()
 
     resgatados = 0
@@ -292,7 +295,7 @@ def _reavaliar_maturacao_tiktok(session, client, cfg: dict, run_id: Optional[int
         post.comment_count = comment_count
         post.digg_count = digg_count
         post.play_count = int(stats.get("play_count") or post.play_count or 0)
-        maturou = comment_count >= piso_comentarios and digg_count >= piso_likes
+        maturou = comment_count >= piso_comentarios or digg_count >= piso_likes  # OR, ver passes_level0_abs
         if maturou:
             cap = caption_seller_score(post.descricao, cfg)
             try:
@@ -728,7 +731,7 @@ def _reavaliar_maturacao_meta(session, client, cfg: dict, run_id: Optional[int])
             CandidatoMaturacao.fonte == "meta",
             CandidatoMaturacao.ativo == True,  # noqa: E712
             CandidatoMaturacao.tentativas < max_tentativas,
-        )
+        ).order_by(CandidatoMaturacao.primeira_vez_visto.asc())  # ver comentário no lado tiktok
     ).scalars().all()
 
     resgatados = 0
