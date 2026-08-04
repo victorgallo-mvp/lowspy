@@ -135,6 +135,16 @@ class AdSnapshot(BaseModel):
     def _none_para_vazio(cls, v):
         return v if v is not None else ""
 
+    @field_validator("body", mode="before")
+    @classmethod
+    def _string_vira_dict(cls, v):
+        # o endpoint de detalhe (/adLibrary/ad) às vezes manda snapshot.body como
+        # STRING crua em vez de {"text": ...} (achado real: derrubava o /reverso/meta
+        # inteiro com ValidationError) — normaliza pro shape que AdSnapshotBody espera
+        if isinstance(v, str):
+            return {"text": v}
+        return v
+
 
 class AdItem(BaseModel):
     model_config = ConfigDict(extra="ignore")

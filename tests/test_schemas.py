@@ -64,3 +64,14 @@ def test_title_e_text_nulos_nao_derrubam_o_item():
         "snapshot": {"title": None, "body": {"text": None}},
     })
     assert it.desc == ""
+
+
+def test_body_string_crua_nao_derruba_o_item():
+    # regressão: /adLibrary/ad (endpoint de detalhe, usado no /reverso/meta) às
+    # vezes manda snapshot.body como STRING crua em vez de {"text": ...} — derrubava
+    # com ValidationError "Input should be a valid dictionary" (achado real em produção)
+    it = facebook_ad_to_item({
+        "ad_archive_id": "8",
+        "snapshot": {"body": "🎨 Gosta de pintura em porcelana? Baixe a apostila gratuitamente!"},
+    })
+    assert "Gosta de pintura" in it.desc
