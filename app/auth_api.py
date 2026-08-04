@@ -20,9 +20,16 @@ from .auth import (
 from .db import get_db
 from .email_service import get_email_service
 from .models import Usuario
+from .rate_limit import bloqueado, limpar, registrar_falha
 
 LOG = logging.getLogger("auth")
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+# força bruta em /login: bloqueia por e-mail (não por IP — Railway fica atrás de
+# proxy, confiar em X-Forwarded-For sem validar é spoofável; e-mail é o alvo
+# real que o atacante está tentando quebrar)
+_LOGIN_MAX_TENTATIVAS = 5
+_LOGIN_JANELA_SEGUNDOS = 15 * 60
 
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
@@ -85,12 +92,19 @@ def registro(payload: dict, response: Response, db=Depends(get_db)):
 def login(payload: dict, response: Response, db=Depends(get_db)):
     email = (payload.get("email") or "").strip().lower()
     senha = payload.get("senha") or ""
+
+    if bloqueado(email, _LOGIN_MAX_TENTATIVAS, _LOGIN_JANELA_SEGUNDOS):
+        raise HTTPException(status_code=429,
+                            detail="muitas tentativas — aguarde alguns minutos e tente de novo")
+
     usuario = db.execute(select(Usuario).where(Usuario.email == email)).scalar_one_or_none()
     if usuario is None or not verificar_senha(senha, usuario.senha_hash):
+        registrar_falha(email)
         raise HTTPException(status_code=401, detail="e-mail ou senha incorretos")
     if not usuario.ativo:
         raise HTTPException(status_code=403, detail="conta desativada")
 
+    limpar(email)
     _set_session_cookies(response, usuario.id)
     return _usuario_publico(usuario)
 

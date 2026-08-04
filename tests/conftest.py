@@ -24,3 +24,13 @@ def session():
     finally:
         s.close()
         Base.metadata.drop_all(engine)
+
+
+@pytest.fixture(autouse=True)
+def _limpa_rate_limit():
+    # estado global em memória (não é por-DB-de-teste) — sem isso, um teste de
+    # login falho vaza tentativas pro próximo teste que usar o mesmo e-mail
+    from app.rate_limit import _tentativas
+    _tentativas.clear()
+    yield
+    _tentativas.clear()
