@@ -1,4 +1,9 @@
+from fastapi.testclient import TestClient
+
+from app.api import app
 from app.auth import _decode_token, criar_token, hash_senha, verificar_senha
+
+client = TestClient(app)
 
 
 def test_hash_senha_gera_hash_diferente_da_senha_e_verifica():
@@ -44,3 +49,20 @@ def test_decode_token_rejeita_token_expirado():
         config.JWT_SECRET, algorithm=config.JWT_ALGORITHM,
     )
     assert _decode_token(expirado) is None
+
+
+def test_registro_sobrevive_a_falha_no_provedor_de_email(session, monkeypatch):
+    # provedor de e-mail fora do ar (Resend caiu, chave inválida etc) não pode
+    # transformar um cadastro bem-sucedido em erro 500 — a conta já foi commitada
+    import app.auth_api as auth_api_mod
+
+    class QuebraEmailService:
+        def enviar(self, *a, **k):
+            raise RuntimeError("resend fora do ar")
+
+    monkeypatch.setattr(auth_api_mod, "get_email_service", lambda: QuebraEmailService())
+
+    r = client.post("/auth/registro", json={"email": "novo@teste.com", "senha": "senha12345"})
+    assert r.status_code == 200
+    from app.models import Usuario
+    assert session.query(Usuario).filter_by(email="novo@teste.com").count() == 1

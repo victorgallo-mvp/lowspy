@@ -71,7 +71,12 @@ def registro(payload: dict, response: Response, db=Depends(get_db)):
     db.add(usuario)
     db.commit()
 
-    get_email_service().enviar(email, "boas_vindas", {"email": email})
+    try:
+        get_email_service().enviar(email, "boas_vindas", {"email": email})
+    except Exception:
+        # conta já foi criada (commit acima) — provedor de e-mail fora do ar não
+        # pode transformar um cadastro bem-sucedido num 500 pro usuário
+        LOG.exception("e-mail de boas-vindas não pôde ser enviado pra %s", email)
     _set_session_cookies(response, usuario.id)
     return _usuario_publico(usuario)
 

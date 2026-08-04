@@ -42,6 +42,11 @@ COOKIE_SECURE = os.getenv("COOKIE_SECURE", "true").lower() in ("1", "true", "yes
 # Provedor de e-mail transacional (verificação, reset de senha) — "none" = loga em
 # vez de enviar de verdade. Troca pra "resend"/"sendgrid"/etc quando plugar de fato.
 EMAIL_PROVIDER = os.getenv("EMAIL_PROVIDER", "none")
+RESEND_API_KEY = os.getenv("RESEND_API_KEY", "")
+# onboarding@resend.dev funciona sem domínio verificado, mas só entrega pro
+# próprio e-mail da conta Resend — trocar quando um domínio for verificado (DNS
+# SPF/DKIM) pra poder mandar pra qualquer usuário.
+EMAIL_FROM = os.getenv("EMAIL_FROM", "LowSpy <onboarding@resend.dev>")
 
 
 def load_config(path: Optional[Path] = None) -> dict:
