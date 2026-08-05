@@ -177,6 +177,7 @@ def listar_produtos(
     db=Depends(get_db),
     _admin: Usuario = Depends(require_admin),
     limit: int = Query(60, ge=1, le=200),
+    offset: int = Query(0, ge=0),
     min_score: float = Query(0.0, ge=0, le=100),
     min_views: int = Query(0, ge=0),
     min_likes: int = Query(0, ge=0),
@@ -219,11 +220,18 @@ def listar_produtos(
             rid = _latest_run_id(db, fonte)
         if rid is not None:
             q = q.where(Produto.run_id == rid)
+    # total real ANTES do limit/offset — sem isso, "total" só ecoava o tamanho da
+    # página (sempre <= limit), escondendo que existia mais resultado além dela
+    # (achado real: run com 120 produtos mostrava "60" e parecia ser tudo).
+    # preco_max fica de fora da contagem: é filtro em Python (preço é texto livre
+    # extraído da legenda, não dá pra contar em SQL sem trazer tudo pra memória).
+    total = db.execute(select(func.count()).select_from(q.subquery())).scalar() or 0
+
     # meta não tem views públicas (Ad Library) — cai pra score automaticamente
     order_col = (
         Post.play_count.desc() if sort == "views" and fonte != "meta" else Produto.score_final.desc()
     )
-    q = q.order_by(order_col).limit(limit)
+    q = q.order_by(order_col).limit(limit).offset(offset)
     itens = [_serialize(pr, post, sc) for pr, post, sc in db.execute(q).all()]
     # filtro de preço aplicado em Python (preço é string livre extraída)
     if preco_max is not None:
@@ -233,7 +241,7 @@ def listar_produtos(
             return float(m.group(0).replace(",", ".")) if m else None
         itens = [i for i in itens if (_num(i["preco"]) or 0) <= preco_max]
     _anexar_feedback(db, itens, _admin.id)
-    return {"total": len(itens), "produtos": itens}
+    return {"total": total, "produtos": itens}
 
 
 def _anexar_feedback(db, itens: list[dict], usuario_id: int) -> None:

@@ -189,6 +189,52 @@ def test_termos_negativos_reenviar_reativa_em_vez_de_duplicar(session):
     assert len(c.get("/termos-negativos").json()["termos"]) == 1
 
 
+def _insere_produtos_direto(session, run_id, n, fonte="tiktok"):
+    """Insere N produtos direto no banco (sem passar pelo pipeline) — só pra
+    testar paginação/contagem em volume, sem depender da fixture de 5 itens."""
+    from app.models import Post, Produto, Score
+    for i in range(n):
+        pid = f"bulk-{fonte}-{i}"
+        session.add(Post(id=pid, fonte=fonte, url=f"https://x.test/{pid}", descricao="d",
+                         idioma="pt", play_count=n - i))
+        session.add(Score(post_id=pid, score_final=50.0))
+        session.add(Produto(post_id=pid, run_id=run_id, mercado="formato_digital",
+                            sinal="demanda_confirmada", score_final=50.0))
+    session.commit()
+
+
+def test_listar_produtos_total_reflete_o_real_nao_so_a_pagina(session):
+    # regressão: run com 120 produtos mostrava "total": 60 — o campo ecoava o
+    # tamanho da PÁGINA (limitada), não a contagem real que bate com os filtros
+    from app.models import Run
+    run = Run(status="done", mode="live", fonte="tiktok")
+    session.add(run)
+    session.commit()
+    _insere_produtos_direto(session, run.id, 120)
+
+    c = _admin_client(session)
+    r = c.get(f"/produtos?run={run.id}&limit=60").json()
+    assert r["total"] == 120
+    assert len(r["produtos"]) == 60
+
+
+def test_listar_produtos_offset_pagina_o_resto_sem_repetir(session):
+    from app.models import Run
+    run = Run(status="done", mode="live", fonte="tiktok")
+    session.add(run)
+    session.commit()
+    _insere_produtos_direto(session, run.id, 120)
+
+    c = _admin_client(session)
+    pagina1 = c.get(f"/produtos?run={run.id}&limit=60&offset=0").json()["produtos"]
+    pagina2 = c.get(f"/produtos?run={run.id}&limit=60&offset=60").json()["produtos"]
+    ids1 = {p["post_id"] for p in pagina1}
+    ids2 = {p["post_id"] for p in pagina2}
+    assert len(pagina1) == 60
+    assert len(pagina2) == 60
+    assert ids1.isdisjoint(ids2)
+
+
 def test_listar_produtos_ordena_por_views(session):
     _seed_and_sweep(session)
     c = _admin_client(session)

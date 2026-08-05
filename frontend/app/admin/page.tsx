@@ -275,6 +275,7 @@ export default function Dashboard() {
   const [varreduras, setVarreduras] = useState<Varredura[]>([]);
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [dry, setDry] = useState(false);
   const [sweeping, setSweeping] = useState(false);
   const [sweepMsg, setSweepMsg] = useState<string | null>(null);
@@ -286,7 +287,7 @@ export default function Dashboard() {
     setErr(null);
     try {
       const [pr, cu, vs] = await Promise.all([
-        getProdutos(f),
+        getProdutos({ ...f, offset: 0 }),
         getCusto().catch(() => null),
         getVarreduras().catch(() => [] as Varredura[]),
       ]);
@@ -303,6 +304,19 @@ export default function Dashboard() {
   useEffect(() => {
     load();
   }, [load]);
+
+  const loadMore = useCallback(async () => {
+    if (!data || loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const pr = await getProdutos({ ...f, offset: data.produtos.length });
+      setData((v) => (v ? { total: pr.total, produtos: [...v.produtos, ...pr.produtos] } : pr));
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "falha ao carregar mais");
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [f, data, loadingMore]);
 
   const pollRun = useCallback(
     async (id: number) => {
@@ -514,7 +528,13 @@ export default function Dashboard() {
           incluir ES/EN
         </label>
         <span className="runcount">
-          {loading ? "carregando…" : <><b>{data?.total ?? 0}</b> produtos</>}
+          {loading ? (
+            "carregando…"
+          ) : data && data.produtos.length < data.total ? (
+            <><b>{data.produtos.length}</b> de <b>{data.total}</b> produtos</>
+          ) : (
+            <><b>{data?.total ?? 0}</b> produtos</>
+          )}
         </span>
       </section>
 
@@ -559,6 +579,14 @@ export default function Dashboard() {
           {data?.produtos.map((p, i) => (
             <Row key={p.post_id} p={p} i={i} />
           ))}
+        </div>
+      )}
+
+      {data && data.produtos.length < data.total && (
+        <div className="loadmorewrap">
+          <button className="btn" onClick={loadMore} disabled={loadingMore}>
+            {loadingMore ? "carregando…" : `carregar mais (${data.total - data.produtos.length})`}
+          </button>
         </div>
       )}
 

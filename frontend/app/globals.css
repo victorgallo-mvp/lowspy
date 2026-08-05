@@ -207,6 +207,7 @@ body::after {
 
 /* ---------------- list ---------------- */
 .list { display: flex; flex-direction: column; gap: 10px; }
+.loadmorewrap { display: flex; justify-content: center; margin-top: 18px; }
 .row {
   position: relative; display: grid; grid-template-columns: 42px 66px 1fr 176px; gap: 16px;
   align-items: start;

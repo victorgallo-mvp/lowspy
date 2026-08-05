@@ -74,6 +74,7 @@ export type Filtros = {
   min_comments?: number;
   preco_max?: number;
   limit?: number;
+  offset?: number;
   run?: string; // latest | all | <id>
   only_new?: boolean;
   fonte?: Fonte;
@@ -177,6 +178,7 @@ export async function getProdutos(f: Filtros): Promise<ProdutosResp> {
   if (f.only_new) q.set("only_new", "true");
   q.set("run", f.run ?? "latest");
   q.set("limit", String(f.limit ?? 60));
+  q.set("offset", String(f.offset ?? 0));
   q.set("fonte", f.fonte ?? "all");
   q.set("idioma", f.idioma ?? "pt");
   return (await _get(`/produtos?${q.toString()}`)).json();
