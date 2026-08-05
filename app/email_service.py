@@ -38,6 +38,13 @@ def _render(template: str, contexto: dict) -> tuple[str, str]:
             f"<p>Olá!</p><p>Sua conta <b>{contexto.get('email', '')}</b> foi criada com sucesso "
             f"no LowSpy.</p>",
         )
+    if template == "resetar_senha":
+        return (
+            "Redefinir sua senha — LowSpy",
+            f"<p>Recebemos um pedido pra redefinir a senha da sua conta.</p>"
+            f"<p><a href=\"{contexto.get('link', '')}\">Clique aqui pra criar uma senha nova</a></p>"
+            f"<p>O link expira em 1 hora. Se você não pediu isso, pode ignorar este e-mail.</p>",
+        )
     if template == "varredura_falhou":
         return (
             f"[LowSpy] Varredura {contexto.get('fonte', '')} falhou (run #{contexto.get('run_id', '')})",

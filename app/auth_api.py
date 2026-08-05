@@ -12,10 +12,13 @@ from .auth import (
     COOKIE_NAME,
     CSRF_COOKIE_NAME,
     criar_token,
+    criar_token_reset_senha,
     gerar_csrf_token,
     get_current_user_optional,
     hash_senha,
+    sub_do_token,
     verificar_senha,
+    verificar_token_reset_senha,
 )
 from .db import get_db
 from .email_service import get_email_service
@@ -30,6 +33,12 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 # real que o atacante está tentando quebrar)
 _LOGIN_MAX_TENTATIVAS = 5
 _LOGIN_JANELA_SEGUNDOS = 15 * 60
+
+# pedido de reset de senha: limita pra não virar vetor de spam de e-mail
+# (mandar o link 100x pro mesmo alvo) — janela mais larga, teto mais folgado
+# que o de login, porque aqui o "custo" de cada tentativa é 1 e-mail real
+_RESET_MAX_TENTATIVAS = 3
+_RESET_JANELA_SEGUNDOS = 60 * 60
 
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
@@ -107,6 +116,45 @@ def login(payload: dict, response: Response, db=Depends(get_db)):
     limpar(email)
     _set_session_cookies(response, usuario.id)
     return _usuario_publico(usuario)
+
+
+@router.post("/esqueci-senha")
+def esqueci_senha(payload: dict, db=Depends(get_db)):
+    email = (payload.get("email") or "").strip().lower()
+    resposta = {"ok": True}  # sempre a mesma resposta, exista a conta ou não —
+                             # senão dá pra usar esse endpoint pra descobrir e-mail cadastrado
+
+    chave = f"reset:{email}"
+    if not email or bloqueado(chave, _RESET_MAX_TENTATIVAS, _RESET_JANELA_SEGUNDOS):
+        return resposta
+
+    usuario = db.execute(select(Usuario).where(Usuario.email == email)).scalar_one_or_none()
+    if usuario is not None and usuario.ativo:
+        registrar_falha(chave)  # conta contra o teto mesmo em caso de sucesso (é o "gasto")
+        token = criar_token_reset_senha(usuario)
+        link = f"{config.FRONTEND_URL}/resetar-senha?token={token}"
+        try:
+            get_email_service().enviar(email, "resetar_senha", {"link": link})
+        except Exception:
+            LOG.exception("e-mail de reset de senha não pôde ser enviado pra %s", email)
+    return resposta
+
+
+@router.post("/resetar-senha")
+def resetar_senha(payload: dict, db=Depends(get_db)):
+    token = payload.get("token") or ""
+    nova_senha = payload.get("nova_senha") or ""
+    if len(nova_senha) < 8:
+        raise HTTPException(status_code=400, detail="senha precisa de pelo menos 8 caracteres")
+
+    usuario_id = sub_do_token(token)
+    usuario = db.get(Usuario, usuario_id) if usuario_id is not None else None
+    if not verificar_token_reset_senha(token, usuario):
+        raise HTTPException(status_code=400, detail="link inválido ou expirado")
+
+    usuario.senha_hash = hash_senha(nova_senha)
+    db.commit()
+    return {"ok": True}
 
 
 @router.post("/logout")

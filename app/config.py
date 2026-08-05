@@ -28,6 +28,9 @@ CREDIT_USD = float(os.getenv("CREDIT_USD", "0.002"))
 MODEL_TIER2 = os.getenv("MODEL_TIER2", "claude-haiku-4-5")
 # Origens permitidas do frontend (Vercel). "*" em dev; setar a URL do Vercel em prod.
 CORS_ORIGINS = os.getenv("CORS_ORIGINS", "*")
+# Base do frontend pra montar link em e-mail (reset de senha etc) — separado de
+# CORS_ORIGINS porque esse pode ter múltiplas origens/wildcard; link precisa de UMA.
+FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
 FIXTURES = ROOT / "fixtures"
 
 # --- Auth (usuário + admin) ---------------------------------------------------

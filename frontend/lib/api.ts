@@ -124,6 +124,31 @@ export async function logout(): Promise<void> {
   await fetch(`${API_BASE}/auth/logout`, { ...WITH_SESSION, method: "POST" });
 }
 
+export async function esqueciSenha(email: string): Promise<void> {
+  // sempre 200 (o backend nunca vaza se o e-mail existe ou não) — sem try/catch
+  // de detail aqui, só propaga erro de rede de verdade
+  const r = await fetch(`${API_BASE}/auth/esqueci-senha`, {
+    ...WITH_SESSION,
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email }),
+  });
+  if (!r.ok) throw new Error(`API ${r.status}`);
+}
+
+export async function resetarSenha(token: string, novaSenha: string): Promise<void> {
+  const r = await fetch(`${API_BASE}/auth/resetar-senha`, {
+    ...WITH_SESSION,
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ token, nova_senha: novaSenha }),
+  });
+  if (!r.ok) {
+    const body = await r.json().catch(() => null);
+    throw new Error(body?.detail || `API ${r.status}`);
+  }
+}
+
 export async function getMe(): Promise<Usuario | null> {
   const r = await fetch(`${API_BASE}/auth/eu`, { ...WITH_SESSION, cache: "no-store" });
   if (!r.ok) return null;

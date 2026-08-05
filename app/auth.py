@@ -57,6 +57,45 @@ def _decode_token(token: str) -> Optional[int]:
         return None
 
 
+# Reset de senha: JWT stateless (sem tabela nova) — embute o senha_hash ATUAL no
+# token. Um reset bem-sucedido troca o senha_hash, o que invalida sozinho
+# qualquer cópia antiga do mesmo token (link usado 2x, e-mail reencaminhado
+# depois de já ter trocado a senha etc.) — dá o efeito de "token de uso único"
+# sem precisar guardar/expirar nada no banco.
+def criar_token_reset_senha(usuario: Usuario) -> str:
+    expira = datetime.now(timezone.utc) + timedelta(minutes=60)
+    payload = {
+        "sub": str(usuario.id),
+        "purpose": "reset_senha",
+        "senha_hash_check": usuario.senha_hash,
+        "exp": expira,
+    }
+    return jwt.encode(payload, config.JWT_SECRET, algorithm=config.JWT_ALGORITHM)
+
+
+def verificar_token_reset_senha(token: str, usuario: Optional[Usuario]) -> bool:
+    if usuario is None:
+        return False
+    try:
+        payload = jwt.decode(token, config.JWT_SECRET, algorithms=[config.JWT_ALGORITHM])
+    except JWTError:
+        return False
+    if payload.get("purpose") != "reset_senha" or str(payload.get("sub")) != str(usuario.id):
+        return False
+    return payload.get("senha_hash_check") == usuario.senha_hash
+
+
+def sub_do_token(token: str) -> Optional[int]:
+    """Lê só o 'sub' de um token JWT qualquer (sem checar `purpose`/expiração
+    fina) — usado pra achar o usuário ANTES de validar o token de reset por
+    completo (precisa do usuário carregado pra comparar o senha_hash)."""
+    try:
+        payload = jwt.decode(token, config.JWT_SECRET, algorithms=[config.JWT_ALGORITHM])
+        return int(payload["sub"])
+    except (JWTError, KeyError, ValueError):
+        return None
+
+
 def get_current_user_optional(
     db=Depends(get_db), lowspy_session: Optional[str] = Cookie(default=None)
 ) -> Optional[Usuario]:

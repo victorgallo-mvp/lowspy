@@ -48,6 +48,9 @@ export default function LoginPage() {
           {loading ? "entrando…" : "entrar"}
         </button>
         <p className="loginlink">
+          <Link href="/esqueci-senha">esqueci minha senha</Link>
+        </p>
+        <p className="loginlink">
           ainda não tem conta? <Link href="/signup">criar conta</Link>
         </p>
       </form>

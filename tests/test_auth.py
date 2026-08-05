@@ -1,7 +1,15 @@
 from fastapi.testclient import TestClient
 
 from app.api import app
-from app.auth import _decode_token, criar_token, hash_senha, verificar_senha
+from app.auth import (
+    _decode_token,
+    criar_token,
+    criar_token_reset_senha,
+    hash_senha,
+    sub_do_token,
+    verificar_senha,
+    verificar_token_reset_senha,
+)
 
 client = TestClient(app)
 
@@ -107,3 +115,124 @@ def test_login_sucesso_limpa_o_contador_de_falhas(session):
     for _ in range(3):
         r = client.post("/auth/login", json={"email": "alvo@teste.com", "senha": "errada"})
         assert r.status_code == 401
+
+
+class _UsuarioFake:
+    def __init__(self, id, senha_hash):
+        self.id = id
+        self.senha_hash = senha_hash
+
+
+def test_token_reset_senha_valido_pro_usuario_certo():
+    u = _UsuarioFake(id=7, senha_hash="hash-atual")
+    tok = criar_token_reset_senha(u)
+    assert sub_do_token(tok) == 7
+    assert verificar_token_reset_senha(tok, u) is True
+
+
+def test_token_reset_senha_invalida_sozinho_depois_de_trocar_a_senha():
+    # o "uso único" vem de comparar contra o senha_hash ATUAL — depois que a
+    # senha muda, qualquer cópia antiga do token (link reencaminhado, replay)
+    # deixa de bater
+    u = _UsuarioFake(id=7, senha_hash="hash-antigo")
+    tok = criar_token_reset_senha(u)
+    u.senha_hash = "hash-novo"  # simula o reset já ter acontecido
+    assert verificar_token_reset_senha(tok, u) is False
+
+
+def test_token_reset_senha_rejeita_usuario_errado():
+    dono = _UsuarioFake(id=7, senha_hash="hash-x")
+    outro = _UsuarioFake(id=8, senha_hash="hash-x")
+    tok = criar_token_reset_senha(dono)
+    assert verificar_token_reset_senha(tok, outro) is False
+
+
+def test_token_reset_senha_rejeita_token_de_login_comum():
+    # token normal de sessão (sem "purpose": "reset_senha") não pode ser
+    # reaproveitado pra resetar senha
+    u = _UsuarioFake(id=7, senha_hash="hash-x")
+    tok_login = criar_token(7)
+    assert verificar_token_reset_senha(tok_login, u) is False
+
+
+def test_esqueci_senha_sempre_responde_ok_mesmo_sem_conta(session):
+    r = client.post("/auth/esqueci-senha", json={"email": "nao-existe@teste.com"})
+    assert r.status_code == 200
+    assert r.json() == {"ok": True}
+
+
+def test_esqueci_senha_manda_email_com_link_de_reset(session, monkeypatch):
+    _cria_usuario(session, email="dono@teste.com")
+    enviados = []
+    import app.auth_api as auth_api_mod
+
+    class CapturaEmailService:
+        def enviar(self, destinatario, template, contexto):
+            enviados.append((destinatario, template, contexto))
+
+    monkeypatch.setattr(auth_api_mod, "get_email_service", lambda: CapturaEmailService())
+
+    r = client.post("/auth/esqueci-senha", json={"email": "dono@teste.com"})
+    assert r.status_code == 200
+    assert len(enviados) == 1
+    destinatario, template, contexto = enviados[0]
+    assert destinatario == "dono@teste.com"
+    assert template == "resetar_senha"
+    assert "/resetar-senha?token=" in contexto["link"]
+
+
+def test_esqueci_senha_bloqueia_apos_3_pedidos(session, monkeypatch):
+    _cria_usuario(session, email="dono@teste.com")
+    import app.auth_api as auth_api_mod
+    monkeypatch.setattr(auth_api_mod, "get_email_service", lambda: type(
+        "S", (), {"enviar": lambda self, *a, **k: None})())
+
+    for _ in range(3):
+        assert client.post("/auth/esqueci-senha", json={"email": "dono@teste.com"}).status_code == 200
+    # 4º pedido ainda responde 200 (não vaza o bloqueio) mas não manda e-mail de verdade
+    enviados = []
+    monkeypatch.setattr(auth_api_mod, "get_email_service", lambda: type(
+        "S", (), {"enviar": lambda self, *a, **k: enviados.append(a)})())
+    r = client.post("/auth/esqueci-senha", json={"email": "dono@teste.com"})
+    assert r.status_code == 200
+    assert enviados == []
+
+
+def test_resetar_senha_fluxo_completo(session):
+    from app.models import Usuario
+    _cria_usuario(session, email="dono@teste.com", senha="senhavelha123")
+    usuario = session.query(Usuario).filter_by(email="dono@teste.com").one()
+    tok = criar_token_reset_senha(usuario)
+
+    r = client.post("/auth/resetar-senha", json={"token": tok, "nova_senha": "senhanova456"})
+    assert r.status_code == 200
+
+    # senha antiga não funciona mais, a nova sim
+    assert client.post("/auth/login",
+                       json={"email": "dono@teste.com", "senha": "senhavelha123"}).status_code == 401
+    assert client.post("/auth/login",
+                       json={"email": "dono@teste.com", "senha": "senhanova456"}).status_code == 200
+
+
+def test_resetar_senha_rejeita_reuso_do_mesmo_token(session):
+    from app.models import Usuario
+    _cria_usuario(session, email="dono@teste.com", senha="senhavelha123")
+    usuario = session.query(Usuario).filter_by(email="dono@teste.com").one()
+    tok = criar_token_reset_senha(usuario)
+
+    assert client.post("/auth/resetar-senha",
+                       json={"token": tok, "nova_senha": "primeiranova1"}).status_code == 200
+    # reenviar o MESMO token uma 2ª vez — já foi consumido (senha_hash mudou)
+    r = client.post("/auth/resetar-senha", json={"token": tok, "nova_senha": "outraqualquer1"})
+    assert r.status_code == 400
+
+
+def test_resetar_senha_rejeita_token_invalido_ou_curto_demais(session):
+    _cria_usuario(session, email="dono@teste.com")
+    assert client.post("/auth/resetar-senha",
+                       json={"token": "lixo-nao-e-jwt", "nova_senha": "senhanova456"}).status_code == 400
+    from app.models import Usuario
+    usuario = session.query(Usuario).filter_by(email="dono@teste.com").one()
+    tok = criar_token_reset_senha(usuario)
+    r = client.post("/auth/resetar-senha", json={"token": tok, "nova_senha": "curta"})
+    assert r.status_code == 400

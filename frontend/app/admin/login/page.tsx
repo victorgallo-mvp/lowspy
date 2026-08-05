@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { login } from "@/lib/api";
 
@@ -51,6 +52,9 @@ export default function AdminLoginPage() {
         <button type="submit" disabled={loading}>
           {loading ? "entrando…" : "entrar"}
         </button>
+        <p className="loginlink">
+          <Link href="/esqueci-senha">esqueci minha senha</Link>
+        </p>
       </form>
     </div>
   );

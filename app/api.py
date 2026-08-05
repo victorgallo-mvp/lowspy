@@ -81,7 +81,10 @@ app.add_middleware(
 # sem o admin saber). Defesa: token CSRF num cookie separado, legível por JS (não
 # httpOnly) — só JS rodando no NOSSO próprio domínio consegue ler esse cookie e
 # ecoar no header; um site atacante não consegue.
-_CSRF_EXEMPT_PATHS = {"/auth/login", "/auth/registro", "/auth/logout"}
+_CSRF_EXEMPT_PATHS = {
+    "/auth/login", "/auth/registro", "/auth/logout",
+    "/auth/esqueci-senha", "/auth/resetar-senha",  # visitante anônimo — sem sessão, sem cookie CSRF ainda
+}
 _CSRF_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 
 
