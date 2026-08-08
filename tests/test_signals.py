@@ -207,6 +207,16 @@ def test_is_servico_local():
     assert is_servico_local("apostila em PDF, acesso imediato no link", CFG) is False
 
 
+def test_is_servico_local_dropa_negocio_fisico_local():
+    # achado real (feedback do operador): shopping/loja física passavam como
+    # "digital" só por bater termo genérico de preço/kit na legenda
+    assert is_servico_local("Dia dos Pais no Boulevard Shopping, venha conferir", CFG) is True
+    assert is_servico_local("Nossa loja física fica na Rua X, venha nos visitar", CFG) is True
+    assert is_servico_local("Endereço: Av. Brasil, 100 — atendimento presencial", CFG) is True
+    # não pega loja ONLINE (sem termo físico) nem "endereço de email"
+    assert is_servico_local("apostila em PDF, entrega por e-mail", CFG) is False
+
+
 def test_is_digital_confirmado():
     assert is_digital_confirmado("Kit com 250 Moldes Prontos, arquivo digital por e-mail", CFG) is True
     assert is_digital_confirmado("Projetos Prontos em PDF, baixe agora", CFG) is True

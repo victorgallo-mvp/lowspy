@@ -371,6 +371,19 @@ servico_local:
   - "diária"
   - "diaria"
   - "hotel"
+  # negócio físico local (shopping, loja, endereço) — achado real: anúncio de
+  # shopping center e loja física passavam como "digital" só por bater termo
+  # genérico de preço/kit (achado no feedback do operador em produção)
+  - "shopping"
+  - "loja física"
+  - "loja fisica"
+  - "nossa loja"
+  - "venha nos visitar"
+  - "venha conhecer"
+  - "endereço:"
+  - "endereco:"
+  - "atendimento presencial"
+  - "agende sua visita"
 
 # --- Confirmação de formato digital (TikTok E Meta — compartilhado) ---------
 # A keyword que achou o post (preço, "Kit", hashtag genérica) é forte demais sozinha
